@@ -14,6 +14,9 @@ type Question = AskUserQuestionItem;
 type Answer = AskUserQuestionAnswer["answers"][number];
 type State = { index: number; selected: Set<number>; input: Input; answer?: Answer };
 
+/** Upper bound on option rows; more choices scroll inside the list. */
+const MAX_VISIBLE_OPTIONS = 10;
+
 export class QuestionPanel implements Component {
   readonly capturesViewportInput = true;
   onAnswer?: (answer: AskUserQuestionAnswer) => void;
@@ -22,12 +25,17 @@ export class QuestionPanel implements Component {
   private readonly states: State[];
   private current = 0;
   private active = false;
-  private readonly maxOptions: number;
+  /**
+   * Lines the composer gives the panel, excluding the status row below it. A
+   * callback keeps the panel inside the screen when the terminal is resized
+   * while the question is open.
+   */
+  private readonly height?: number | (() => number);
 
-  constructor(questions: Question[], maxOptions = 6) {
+  constructor(questions: Question[], height?: number | (() => number)) {
     if (!questions.length) throw new Error("No questions supplied");
     this.questions = questions;
-    this.maxOptions = Math.max(1, maxOptions);
+    this.height = height;
     this.states = questions.map(() => {
       const input = new Input({ prompt: accent("┃ "), placeholder: "Type your answer…" });
       input.onSubmit = () => this.confirm();
@@ -129,6 +137,26 @@ export class QuestionPanel implements Component {
     else this.state.selected.add(index);
     this.state.answer = undefined;
   }
+  /** Current height budget in rows; unlimited when the caller gave none. */
+  private budget() {
+    const value = typeof this.height === "function" ? this.height() : this.height;
+    if (value === undefined || !Number.isFinite(value)) return Number.POSITIVE_INFINITY;
+    return Math.max(1, Math.floor(value));
+  }
+  /**
+   * Option rows that fit within the panel's height budget. Long question or
+   * detail text shrinks the list instead of pushing choices off screen, and a
+   * clipped list always leaves one row for SelectList's scroll indicator.
+   */
+  private optionRows(total: number, fixed: number) {
+    const cap = Math.min(MAX_VISIBLE_OPTIONS, total);
+    const height = this.budget();
+    if (height === Number.POSITIVE_INFINITY) return cap;
+    const room = height - fixed;
+    if (room < 1) return 0;
+    if (room >= total) return Math.min(cap, total);
+    return Math.max(1, Math.min(cap, room - 1));
+  }
   render(width: number): string[] {
     const text = (value: string) => new Text(value, 2, 0).render(width);
     const options = this.question.options ?? [];
@@ -136,9 +164,92 @@ export class QuestionPanel implements Component {
       ...options.map((option) => safeText(option.label)),
       ...(this.customAllowed ? ["Other"] : []),
     ];
-    const lines = [...text(dim("Question")), "", ...text(safeText(this.question.question))];
-    if (this.question.detail) lines.push(...text(dim(safeText(this.question.detail))));
-    lines.push("");
+    const question = text(safeText(this.question.question));
+    const detail = this.question.detail ? text(dim(safeText(this.question.detail))) : [];
+    const input = this.editing
+      ? this.state.input
+          .render(Math.max(1, width - 4))
+          .map((line) => truncateToWidth("  " + line, width))
+      : [];
+    const help = this.editing
+      ? "type answer"
+      : this.question.multiSelect
+        ? "Space toggle"
+        : `1–${Math.min(9, labels.length)} choose now`;
+    // Only mention Tab when there is more than one question; the shorter hint
+    // fits one row on mid-width terminals and leaves room for choices.
+    const keys = this.editing
+      ? `${help} · Enter confirm · Esc back`
+      : [
+          "↑↓ move",
+          help,
+          ...(this.questions.length > 1 ? ["Tab questions"] : []),
+          "Enter select",
+          "Esc back",
+        ].join(" · ");
+    const helpLines = text(dim(keys));
+    const heading = text(dim("Question"));
+    const budget = this.budget();
+    const chrome = (includeDetail: boolean, includeHelp: boolean) =>
+      question.length +
+      (includeDetail ? detail.length : 0) +
+      (this.editing ? 1 + input.length : 0) +
+      (includeHelp ? helpLines.length : 0);
+    const fittedOptions = (includeDetail: boolean, includeHelp: boolean) =>
+      this.optionRows(labels.length, chrome(includeDetail, includeHelp));
+
+    // Start with the full chrome and drop the detail or help line only when that
+    // is what makes a couple of choices visible on a short terminal.
+    const need = Math.min(2, labels.length);
+    let showDetail = true;
+    let showHelp = true;
+    let visible = fittedOptions(true, true);
+    for (const candidate of [
+      { detail: true, help: false },
+      { detail: false, help: false },
+    ]) {
+      if (visible >= need) break;
+      const rows = fittedOptions(candidate.detail, candidate.help);
+      if (rows > visible) {
+        visible = rows;
+        showDetail = candidate.detail;
+        showHelp = candidate.help;
+      }
+    }
+
+    if (visible < 1) {
+      // Not even one choice fits: keep the question readable, and the input line
+      // when the user is typing an "Other" answer, without clipping the frame.
+      const limited = Math.max(1, Math.floor(budget));
+      if (!this.editing) return question.slice(0, limited);
+      const head = question.slice(0, Math.max(0, limited - input.length));
+      return [...head, ...input].slice(-limited);
+    }
+
+    let head = [...question, ...(showDetail ? detail : [])];
+    let foot = this.editing ? ["", ...input] : [];
+    if (showHelp) foot.push(...helpLines);
+
+    // Spend leftover rows on the decorative frame (heading and separators) only
+    // when that does not cost any visible choices.
+    const listCount = visible + (visible < labels.length ? 1 : 0);
+    const spare =
+      budget === Number.POSITIVE_INFINITY
+        ? Number.POSITIVE_INFINITY
+        : budget - (head.length + foot.length + listCount);
+    if (showHelp && spare >= 4) {
+      head = [...heading, "", ...head, ""];
+      foot = [
+        ...foot.slice(0, foot.length - helpLines.length),
+        "",
+        ...foot.slice(foot.length - helpLines.length),
+      ];
+    }
+
+    const room =
+      budget === Number.POSITIVE_INFINITY
+        ? Number.POSITIVE_INFINITY
+        : Math.max(0, budget - head.length - foot.length);
     const list = new SelectList(
       labels.map((label, index) => {
         const checked =
@@ -155,30 +266,14 @@ export class QuestionPanel implements Component {
             safeText(options[index].description!).replace(/\s+/g, " "),
         };
       }),
-      this.maxOptions,
+      visible,
       selectionTheme,
     );
     list.setSelectedIndex(this.state.index);
-    lines.push(
-      ...list.render(Math.max(1, width - 4)).map((line) => truncateToWidth("  " + line, width)),
-    );
-    if (this.editing)
-      lines.push(
-        "",
-        ...this.state.input
-          .render(Math.max(1, width - 4))
-          .map((line) => truncateToWidth("  " + line, width)),
-      );
-    lines.push("");
-    const help = this.editing
-      ? "type answer"
-      : this.question.multiSelect
-        ? "Space toggle"
-        : `1–${Math.min(9, labels.length)} choose now`;
-    const keys = this.editing
-      ? `${help} · Enter confirm · Esc back`
-      : `↑↓ move · ${help} · Tab questions · Enter select · Esc back`;
-    lines.push(...text(dim(keys)));
-    return lines;
+    let listLines = list
+      .render(Math.max(1, width - 4))
+      .map((line) => truncateToWidth("  " + line, width));
+    if (listLines.length > room) listLines = listLines.slice(0, room);
+    return [...head, ...listLines, ...foot];
   }
 }

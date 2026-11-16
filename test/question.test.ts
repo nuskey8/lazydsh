@@ -30,6 +30,114 @@ test("questions render numbered choices and one key answers with the original la
     assert.ok(panel.render(width).every((line) => visibleWidth(line) <= width));
 });
 
+test("the panel fits its height budget and keeps several options visible", () => {
+  const panel = new QuestionPanel(
+    [
+      {
+        id: "pick",
+        question: "Which database should we use?",
+        detail: "Pick the one your team already operates.",
+        options: Array.from({ length: 8 }, (_, index) => ({ label: `Option ${index + 1}` })),
+      },
+    ],
+    12,
+  );
+  const lines = panel.render(80).map(stripVTControlCharacters);
+  assert.ok(lines.length <= 12, `panel used ${lines.length} lines`);
+  assert.equal(lines.filter((line) => /^\s*(?:›\s*)?\d+\)\s/.test(line)).length, 9);
+});
+
+test("a short panel drops its heading so the list still shows many options", () => {
+  const panel = new QuestionPanel(
+    [
+      {
+        id: "pick",
+        question: "Which database should we use?",
+        detail: "Pick the one your team already operates.",
+        options: Array.from({ length: 8 }, (_, index) => ({ label: `Option ${index + 1}` })),
+      },
+    ],
+    9,
+  );
+  const lines = panel.render(80).map(stripVTControlCharacters);
+  assert.ok(lines.length <= 9, `panel used ${lines.length} lines`);
+  assert.doesNotMatch(lines.join("\n"), /Question/);
+  assert.equal(lines.filter((line) => /^\s*(?:›\s*)?\d+\)\s/.test(line)).length, 5);
+});
+
+test("the panel never renders taller than its height budget", () => {
+  const many = {
+    id: "pick",
+    question: "Which database should we use for the new service?",
+    detail: "Consider operations, latency and how the team deploys today.",
+    options: Array.from({ length: 8 }, (_, index) => ({ label: `Option ${index + 1}` })),
+  };
+  for (const budget of [1, 2, 3, 4, 5, 6, 8, 10, 15, 20]) {
+    for (const width of [24, 40, 80]) {
+      const lines = new QuestionPanel([many], budget).render(width);
+      assert.ok(
+        lines.length <= budget,
+        `budget ${budget} at width ${width} rendered ${lines.length} lines`,
+      );
+      assert.ok(lines.length >= 1);
+      assert.ok(lines.every((line) => visibleWidth(line) <= width));
+    }
+  }
+});
+
+test("the panel follows a live height budget when the terminal shrinks", () => {
+  let budget = 12;
+  const panel = new QuestionPanel(
+    [
+      {
+        id: "pick",
+        question: "Which database should we use?",
+        detail: "Pick the one your team already operates.",
+        options: Array.from({ length: 8 }, (_, index) => ({ label: `Option ${index + 1}` })),
+      },
+    ],
+    () => budget,
+  );
+  assert.ok(panel.render(80).length <= 12);
+  budget = 5;
+  assert.ok(panel.render(80).length <= 5);
+  budget = 2;
+  assert.ok(panel.render(80).length <= 2);
+});
+
+test("a short panel keeps choices on screen instead of clipping them", () => {
+  const lines = new QuestionPanel(
+    [
+      {
+        id: "pick",
+        question: "Which database should we use?",
+        options: Array.from({ length: 8 }, (_, index) => ({ label: `Option ${index + 1}` })),
+      },
+    ],
+    5,
+  )
+    .render(80)
+    .map(stripVTControlCharacters);
+  assert.equal(lines.length, 5);
+  assert.equal(lines.filter((line) => /^\s*(?:›\s*)?\d+\)\s/.test(line)).length, 2);
+});
+
+test("a tall panel lists ten options at once and scrolls the rest", () => {
+  const panel = new QuestionPanel(
+    [
+      {
+        id: "letter",
+        question: "Pick a letter",
+        options: Array.from({ length: 12 }, (_, index) => ({ label: `Option ${index + 1}` })),
+      },
+    ],
+    40,
+  );
+  const lines = panel.render(80).map(stripVTControlCharacters);
+  assert.equal(lines.filter((line) => /^\s*(?:›\s*)?\d+\)\s/.test(line)).length, 10);
+  assert.match(lines.join("\n"), /\(1\/13\)/);
+});
+
 test("Tab preserves multiple selections, supports Other text and returns all answers together", () => {
   const panel = new QuestionPanel([
     { ...question, multiSelect: true },

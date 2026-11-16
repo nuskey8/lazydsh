@@ -380,9 +380,11 @@ export async function runUI(
       if (closing || signal.aborted) return { cancelled: true };
       if (decision) throw new Error("Another question is already awaiting an answer.");
       return new Promise((resolve) => {
-        const panel = new QuestionPanel(
-          request.questions,
-          Math.max(1, Math.min(6, tui.terminal.rows - 12)),
+        // The status row stays below the panel, so the question gets the rest of
+        // the composer and can show as many choices as fit instead of one row.
+        // Measure on every frame so a resize cannot push the panel off screen.
+        const panel = new QuestionPanel(request.questions, () =>
+          Math.max(1, tui.terminal.rows - status.render(Math.max(1, tui.terminal.columns)).length),
         );
         let settled = false;
         const settle = (answer: QuestionResult) => {
