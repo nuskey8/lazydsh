@@ -16,7 +16,7 @@
         "@deepseek-ai/dsh-client-file-upload": "0.2.2-rc.2",
         "@deepseek-ai/dsh-cmdline": "0.2.2-rc.2",
         "@deepseek-ai/dsh-commands": "0.2.2-rc.2",
-        "@deepseek-ai/dsh-credentials": "0.2.2-rc.2",
+        "@deepseek-ai/dsh-credentials": "0.2.2-rc.3",
         "@deepseek-ai/dsh-deliverable-file-references": "0.2.2-rc.2",
         "@deepseek-ai/dsh-file-reference": "0.2.2-rc.2",
         "@deepseek-ai/dsh-file-reference-local": "0.2.2-rc.2",
@@ -187,7 +187,7 @@
 
     "@deepseek-ai/dsh-config-editor": ["@deepseek-ai/dsh-config-editor@0.2.2-rc.2", "", { "dependencies": { "@deepseek-ai/dsh-atomic-write": "0.2.2-rc.2", "js-yaml": "^4.3.2", "yaml": "^2.8.1" }, "peerDependencies": { "@deepseek-ai/cordis": "~4.1.0", "@deepseek-ai/cordis-plugin-include": "~1.1.0", "@deepseek-ai/cordis-plugin-loader": "~1.1.0", "@deepseek-ai/dsh-app-boot": "0.2.2-rc.2", "@deepseek-ai/dsh-hmr": "0.2.2-rc.2" } }, "sha512-Eu9fKMBNHes7gOyFlLk7IZTTYMHlPnuYJeGWcCm+2eWUsJ9EIDz8e/tp+e43RXzHIdrseInLL67b65mjnpxm3w=="],
 
-    "@deepseek-ai/dsh-credentials": ["@deepseek-ai/dsh-credentials@0.2.2-rc.2", "", { "dependencies": { "@deepseek-ai/dsh-brand": "0.2.2-rc.2" }, "peerDependencies": { "@deepseek-ai/cordis": "~4.1.0" } }, "sha512-0eYSzsPpWuD4huyOqH4iQV4a3s8ges2C3tI8ejbNlpFT4vbij7i+C16/9ycBSUJiYfkaF2+tSct1IZlsobjpdw=="],
+    "@deepseek-ai/dsh-credentials": ["@deepseek-ai/dsh-credentials@0.2.2-rc.3", "", { "dependencies": { "@deepseek-ai/dsh-brand": "0.2.2-rc.3" }, "peerDependencies": { "@deepseek-ai/cordis": "~4.1.0" } }, "sha512-xizozgwRn1arS+X74v/+AE11iUiaklfdtm85hrptwowVdBeILrPz08/kpxHKrwOV6+nVNRjTVyEqrMyE9yRHBg=="],
 
     "@deepseek-ai/dsh-credentials-local": ["@deepseek-ai/dsh-credentials-local@0.2.2-rc.2", "", { "dependencies": { "@deepseek-ai/schemastery": "~3.19.0", "chokidar": "5.0.0", "yaml": "^2.9.0" }, "peerDependencies": { "@deepseek-ai/cordis": "~4.1.0", "@deepseek-ai/dsh-atomic-write": "0.2.2-rc.2", "@deepseek-ai/dsh-credentials": "0.2.2-rc.2", "@deepseek-ai/dsh-home-paths": "0.2.2-rc.2", "@deepseek-ai/dsh-launch-environment": "0.2.2-rc.2" } }, "sha512-XVGyWdxrn03htcSPprTtz96T5hHhFkaL70vu/0h0ooBkSWSrIQj5oj2WrHj0ax5+AwCZJhNvCc30f0B8dGdxhA=="],
 
@@ -1345,6 +1345,8 @@
 
     "@deepseek-ai/dsh-chunked-list/zod": ["zod@4.6.6", "", {}, "sha512-4UmzQUF5fxvfcYHlbjBmejU+w+hbDnWFx4aS8kBx7nPBHcO2SqPbpAG8snbdg+Xse4pRefR98hgjFgIMCI/UhA=="],
 
+    "@deepseek-ai/dsh-client-connection/@deepseek-ai/dsh-credentials": ["@deepseek-ai/dsh-credentials@0.2.2-rc.2", "", { "dependencies": { "@deepseek-ai/dsh-brand": "0.2.2-rc.2" }, "peerDependencies": { "@deepseek-ai/cordis": "~4.1.0" } }, "sha512-0eYSzsPpWuD4huyOqH4iQV4a3s8ges2C3tI8ejbNlpFT4vbij7i+C16/9ycBSUJiYfkaF2+tSct1IZlsobjpdw=="],
+
     "@deepseek-ai/dsh-client-connection/zod": ["zod@4.6.6", "", {}, "sha512-4UmzQUF5fxvfcYHlbjBmejU+w+hbDnWFx4aS8kBx7nPBHcO2SqPbpAG8snbdg+Xse4pRefR98hgjFgIMCI/UhA=="],
 
     "@deepseek-ai/dsh-client-file-upload/zod": ["zod@4.6.6", "", {}, "sha512-4UmzQUF5fxvfcYHlbjBmejU+w+hbDnWFx4aS8kBx7nPBHcO2SqPbpAG8snbdg+Xse4pRefR98hgjFgIMCI/UhA=="],
@@ -1352,6 +1354,8 @@
     "@deepseek-ai/dsh-command-feedback/zod": ["zod@4.6.6", "", {}, "sha512-4UmzQUF5fxvfcYHlbjBmejU+w+hbDnWFx4aS8kBx7nPBHcO2SqPbpAG8snbdg+Xse4pRefR98hgjFgIMCI/UhA=="],
 
     "@deepseek-ai/dsh-commands/zod": ["zod@4.6.6", "", {}, "sha512-4UmzQUF5fxvfcYHlbjBmejU+w+hbDnWFx4aS8kBx7nPBHcO2SqPbpAG8snbdg+Xse4pRefR98hgjFgIMCI/UhA=="],
+
+    "@deepseek-ai/dsh-credentials/@deepseek-ai/dsh-brand": ["@deepseek-ai/dsh-brand@0.2.2-rc.3", "", { "peerDependencies": { "@deepseek-ai/cordis": "~4.1.0" } }, "sha512-vX7Ugoqs9GTO/1r/R7K3wZ6Vq1erJHLPvzEr78yxMigCitM0PA4kBZ8i/WOZrsNTLUOu/OiiBqr9HW3CQ4jEww=="],
 
     "@deepseek-ai/dsh-deepseek-account/zod": ["zod@4.6.6", "", {}, "sha512-4UmzQUF5fxvfcYHlbjBmejU+w+hbDnWFx4aS8kBx7nPBHcO2SqPbpAG8snbdg+Xse4pRefR98hgjFgIMCI/UhA=="],
 

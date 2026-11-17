@@ -59,7 +59,7 @@
     "@deepseek-ai/dsh-client-file-upload": "0.2.2-rc.2",
     "@deepseek-ai/dsh-cmdline": "0.2.2-rc.2",
     "@deepseek-ai/dsh-commands": "0.2.2-rc.2",
-    "@deepseek-ai/dsh-credentials": "0.2.2-rc.2",
+    "@deepseek-ai/dsh-credentials": "0.2.2-rc.3",
     "@deepseek-ai/dsh-deliverable-file-references": "0.2.2-rc.2",
     "@deepseek-ai/dsh-file-reference": "0.2.2-rc.2",
     "@deepseek-ai/dsh-file-reference-local": "0.2.2-rc.2",
