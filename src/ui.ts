@@ -371,10 +371,17 @@ export async function runUI(
       if (closing || params.signal?.aborted) return { outcome: "cancelled" };
       if (decision) throw new Error("Another question is already awaiting an answer.");
       return new Promise<{ outcome: "allowed-once" | "rejected" | "cancelled" }>((resolve) => {
-        const panel = new ApprovalPanel({
-          toolName: params.toolName,
-          reason: params.displayReason?.en ?? params.reason,
-        });
+        // The pending tool-call row already holds the exact arguments; approval
+        // requests only carry the call ID, so show them while deciding.
+        const callArguments = toolLog.find(params.callId)?.callArguments;
+        const panel = new ApprovalPanel(
+          {
+            toolName: params.toolName,
+            reason: params.displayReason?.en ?? params.reason,
+            ...(callArguments === undefined ? {} : { arguments: callArguments }),
+          },
+          panelHeight,
+        );
         let settled = false;
         const settle = (outcome: "allowed-once" | "rejected" | "cancelled") => {
           if (settled) return;
@@ -406,9 +413,7 @@ export async function runUI(
         // The status row stays below the panel, so the question gets the rest of
         // the composer and can show as many choices as fit instead of one row.
         // Measure on every frame so a resize cannot push the panel off screen.
-        const panel = new QuestionPanel(request.questions, () =>
-          Math.max(1, tui.terminal.rows - status.render(Math.max(1, tui.terminal.columns)).length),
-        );
+        const panel = new QuestionPanel(request.questions, panelHeight);
         let settled = false;
         const settle = (answer: QuestionResult) => {
           if (settled) return;
@@ -559,6 +564,11 @@ export async function runUI(
     composer.addChild(status);
     tui.setFocus(panel);
     tui.requestRender();
+  }
+
+  /** Rows a question/approval panel may use above the always-visible status row. */
+  function panelHeight() {
+    return Math.max(1, tui.terminal.rows - status.render(Math.max(1, tui.terminal.columns)).length);
   }
 
   function select(

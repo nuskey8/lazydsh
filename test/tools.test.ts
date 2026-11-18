@@ -39,6 +39,17 @@ test("large read output updates one collapsed row without dumping arguments or c
   }
 });
 
+test("pending tool calls expose their arguments until the result arrives", () => {
+  const log = new ToolLog();
+  const row = emit(log, "tool/call", call("a", "src/main.ts"));
+  assert.ok(row);
+  assert.equal(log.find("a")?.callArguments, JSON.stringify({ path: "src/main.ts" }));
+  assert.equal(log.find("missing"), undefined);
+  assert.equal(log.find(undefined), undefined);
+  emit(log, "tool/result", result("a", "ok"));
+  assert.equal(log.find("a"), undefined);
+});
+
 test("interleaved root and child calls stay paired; empty success and errors are visible", () => {
   const log = new ToolLog();
   const root = emit(log, "tool/call", call("a", "root.txt"));
