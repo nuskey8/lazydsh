@@ -967,6 +967,11 @@ export class Runtime {
                 method: "assistant.delta",
                 params: { ...params, text: frame.chunk.text, index: frame.chunk.index },
               });
+            else if (frame.chunk.type === "reasoning-delta")
+              onEvent?.({
+                method: "assistant.reasoning",
+                params: { ...params, text: frame.chunk.text, index: frame.chunk.index },
+              });
           }),
           ctx.on("agent/request-error", async (request, next) => {
             if (request.agent !== agent || retriedAuth || !isAuthFailure(request.failure))

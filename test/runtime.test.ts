@@ -186,14 +186,15 @@ test("streaming, authentication and history", async () => {
     const final=order.findIndex(event=>event.method==="session.event" && event.params.event.type==="assistant/message");
     assert.ok(delta>=0 && final>delta);
     assert.equal(order.filter(event=>event.method==="assistant.delta").map(event=>event.params.text).join(""),"Hello from dsh.");
+    assert.equal(order.filter(event=>event.method==="assistant.reasoning").map(event=>event.params.text).join(""),"Brief reasoning");
     assert.ok(order.some(event=>event.method==="lazydsh.thinking" && event.params.type==="usage"));
     assert.equal((await runtime.stats()).latest.outputTokens,4);
     await runtime.open(route);
     assert.ok((await runtime.choices("sessions")).options.some(item=>item.value===id));
     await runtime.open(route,{...callbacks,resume:id});
     const rows=historyRows(await runtime.history(),id);
-    assert.ok(rows.some(row=>row.kind==="user" && row.text.includes("Say hello.")));
-    assert.ok(rows.some(row=>row.kind==="assistant" && row.text==="Hello from dsh."));
+    assert.ok(rows.some(row=>"kind" in row && row.kind==="user" && row.text.includes("Say hello.")));
+    assert.ok(rows.some(row=>"kind" in row && row.kind==="assistant" && row.text==="Hello from dsh."));
     assert.equal((await runtime.efforts()).current,"high");
     await runtime.open({...route,model:"test-model-2"},{...callbacks,resume:id});
     assert.equal(runtime.session.id,id);
