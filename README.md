@@ -85,7 +85,7 @@ Flags:
 | `/logout`     | `[provider]`       | Remove saved provider credentials                                      |
 | `/dsh`        | `<command> [args]` | Run native dsh commands (even if they conflict with TUI command names) |
 | `/effort`     | `[level            | default]`                                                              | Select the reasoning effort for the current model |
-| `/new`        | —                  | Start a new conversation while keeping the current display             |
+| `/new`        | —                  | Start a new conversation                                               |
 | `/rename`     | `[title]`          | Rename the current session title                                       |
 | `/fork`       | —                  | Fork the session from a completed turn                                 |
 | `/archive`    | —                  | Select and archive a session                                           |

@@ -85,7 +85,7 @@ Flags:
 | `/logout`     | `[provider]`       | 删除已保存的供应商凭据                                 |
 | `/dsh`        | `<command> [args]` | 运行原生的 dsh 命令（即使与 TUI 命令名称冲突时也可以） |
 | `/effort`     | `[level            | default]`                                              | 选择当前模型的推理 effort (思考强度) |
-| `/new`        | —                  | 保留当前显示并开始新的对话                             |
+| `/new`        | —                  | 开始新的对话                                           |
 | `/rename`     | `[title]`          | 修改当前会话的标题                                     |
 | `/fork`       | —                  | 从已完成的对话轮次中分支新会话                         |
 | `/archive`    | —                  | 选择并归档会话                                         |

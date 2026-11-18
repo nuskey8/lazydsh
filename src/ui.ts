@@ -505,7 +505,6 @@ export async function runUI(
     notifyModel = false,
     startup = false,
     directory?: string,
-    connectionOptions: { keepTranscript?: boolean } = {},
   ) {
     pendingStartupConnection = undefined;
     busy = true;
@@ -530,7 +529,7 @@ export async function runUI(
       syncAttachments();
       toolLog.entries.clear();
       clearQueue();
-      if (!connectionOptions.keepTranscript) transcript.clear();
+      transcript.clear();
       if (sessionId) {
         for (const row of historyRows(await runtime.history(), id)) {
           if (row instanceof ThinkingView || row instanceof ToolRow) transcript.addChild(row);
@@ -573,29 +572,19 @@ export async function runUI(
     }
   }
 
-  // Codex-compatible chat lifecycle: both commands start a new session, but
-  // /new keeps the previous transcript visible while /clear wipes it first.
-  async function startNewConversation(clearScreen: boolean) {
-    if (clearScreen) {
-      transcript.clear();
-      scroll.scrollToEnd();
-      tui.resetTextSelection();
-      update();
-    }
+  // Codex-compatible chat lifecycle: both commands start a new session on a
+  // cleared screen; the previous chat stays resumable via /resume.
+  async function startNewConversation() {
+    transcript.clear();
+    scroll.scrollToEnd();
+    tui.resetTextSelection();
+    update();
     if (!route.model) {
       void pickModel();
       return;
     }
-    await connect(
-      { provider: route.provider, model: route.model },
-      undefined,
-      false,
-      false,
-      undefined,
-      { keepTranscript: true },
-    );
-    if (closing || !runtime.session) return;
-    add("New conversation", runtime.session.id);
+    await connect({ provider: route.provider, model: route.model });
+    if (closing) return;
     scroll.scrollToEnd();
     update();
   }
@@ -899,8 +888,8 @@ export async function runUI(
       if (editor.getText() === draft) editor.setText("");
     }
     add("You", text);
-    if (text === "/clear") {
-      void startNewConversation(true);
+    if (text === "/clear" || text === "/new") {
+      void startNewConversation();
       return;
     }
     if (text === "/quit") {
@@ -909,10 +898,6 @@ export async function runUI(
     }
     if (text === "/model") {
       void pickModel();
-      return;
-    }
-    if (text === "/new") {
-      void startNewConversation(false);
       return;
     }
     const authCommand = /^\/(login|logout)(?:\s+(.*))?$/.exec(text);
