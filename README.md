@@ -62,6 +62,7 @@ Flags:
   --model <id>            Model (default: last used or provider default)
   --effort <level>        Initial reasoning effort
   --permission <preset>   Permission preset for ask (default: dsh policy)
+  --json                  Emit ask results as newline-delimited JSON events
   --cwd <path>            Working directory (default: current directory)
   --home <path>           DSH home directory
   --resume <id>           Continue a saved conversation

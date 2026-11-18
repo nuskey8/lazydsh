@@ -29,6 +29,8 @@ export interface PluginOptions {
   command?: "ask" | "login" | "logout";
   prompt?: string;
   permission?: string;
+  /** Emit the ask result as the DSH-compatible newline-delimited event stream. */
+  json?: boolean;
   /** The provider catalog and pi-ai provider patch are applied after first paint. */
   catalogDeferred?: boolean;
   customPatches?: boolean;

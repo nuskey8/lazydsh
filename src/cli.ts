@@ -49,6 +49,7 @@ const flagHelp: Record<string, string> = {
   model: row("--model <id>", "Model (default: last used or provider default)"),
   effort: row("--effort <level>", "Initial reasoning effort"),
   permission: row("--permission <preset>", "Permission preset for ask (default: dsh policy)"),
+  json: row("--json", "Emit ask results as newline-delimited JSON events"),
   cwd: row("--cwd <path>", "Working directory (default: current directory)"),
   home: row("--home <path>", "DSH home directory"),
   resume: row("--resume <id>", "Continue a saved conversation"),
@@ -101,7 +102,7 @@ function commandHelp(command: string): string {
       description: "Run one noninteractive request.",
       usage: "ask [prompt] [flags]",
       argument: ["[prompt]", "Prompt text; piped stdin is appended"],
-      flags: [...connectionFlags, "permission", "resume"],
+      flags: [...connectionFlags, "permission", "json", "resume"],
     },
     resume: {
       description: "Continue a saved conversation in the TUI.",
@@ -141,6 +142,9 @@ function commandHelp(command: string): string {
   ].join("\n");
 }
 
+/** Whether the invocation asked for the machine-readable `ask` stream. */
+let jsonOutput = false;
+
 async function main() {
   const { values, positionals } = parseArgs({
     options: {
@@ -148,6 +152,7 @@ async function main() {
       model: { type: "string" },
       effort: { type: "string" },
       permission: { type: "string" },
+      json: { type: "boolean" },
       cwd: { type: "string" },
       home: { type: "string" },
       resume: { type: "string" },
@@ -158,6 +163,7 @@ async function main() {
     },
     allowPositionals: true,
   });
+  jsonOutput = values.json === true;
   const command = positionals[0];
   const args = positionals.slice(1);
   if (command !== undefined && !["ask", "resume", "login", "logout", "upgrade"].includes(command))
@@ -190,6 +196,7 @@ async function main() {
     throw new Error("Specify the session ID only once.");
   if (values.permission && command !== "ask")
     throw new Error("--permission is only available with ask.");
+  if (values.json && command !== "ask") throw new Error("--json is only available with ask.");
   if (
     (command === "login" || command === "logout") &&
     (values.provider || values.model || values.resume || values.effort)
@@ -281,6 +288,7 @@ async function main() {
             command === "ask" || command === "login" || command === "logout" ? command : undefined,
           prompt,
           permission: values.permission,
+          json: values.json,
           resumeArgs,
           catalogDeferred,
           customPatches: values.patch.length > 0,
@@ -309,10 +317,15 @@ async function main() {
 }
 
 main().catch((error) => {
+  const message = errorMessage(error);
+  // A failing ask turn already ended the stream with its `final` event; only
+  // failures that produced no terminal event report an `error` event.
+  if (jsonOutput && !(typeof error === "object" && error !== null && "jsonReported" in error))
+    process.stdout.write(JSON.stringify({ type: "error", message }) + "\n");
   console.error(
     formatNotification(
       "Error",
-      errorMessage(error),
+      message,
       terminalColor(process.stderr) || terminalColor(process.stdout),
     ),
   );
