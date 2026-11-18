@@ -1,4 +1,5 @@
 import { execFile, spawn } from "node:child_process";
+import { shellQuote } from "./format.ts";
 import { promisify } from "node:util";
 import { readFile, realpath, access } from "node:fs/promises";
 import { dirname, join, resolve, basename, sep } from "node:path";
@@ -169,9 +170,7 @@ export async function upgradePlan(packageRoot: string, query = output): Promise<
 }
 
 export function upgradeCommand(plan: UpgradePlan) {
-  const quote = (value: string) =>
-    /^[a-zA-Z0-9_./:=+@-]+$/.test(value) ? value : "'" + value.replaceAll("'", "'\\''") + "'";
-  return [plan.manager, ...plan.args].map(quote).join(" ");
+  return [plan.manager, ...plan.args].map((arg) => shellQuote(arg)).join(" ");
 }
 
 export async function upgrade(packageRoot: string) {

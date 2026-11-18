@@ -1,8 +1,6 @@
 import { getBuiltinModels, getBuiltinProviders } from "@earendil-works/pi-ai/providers/all";
 import { normalizeProvider } from "./provider.ts";
 
-export { normalizeProvider } from "./provider.ts";
-
 const preferred = ["deepseek-official", "opencode-go", "opencode", "openai-codex"];
 export const providers = [
   "deepseek-official",

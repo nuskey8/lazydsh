@@ -1,4 +1,4 @@
-import { formatDuration, formatTokens } from "./format.ts";
+import { formatDuration, formatTokens, shellQuote } from "./format.ts";
 import { accent, dim } from "./theme.ts";
 import type { SessionEvent } from "@deepseek-ai/dsh-session";
 import { eventText, reasoningText } from "./runtime-events.ts";
@@ -95,8 +95,11 @@ export function historyRows(events: readonly SessionEvent[], sessionId: string):
 }
 
 export function continuationCommand(sessionId: string, args: string[] = []) {
-  const quote = (value: string) =>
-    /^[a-zA-Z0-9_./:=+-]+$/.test(value) ? value : "'" + value.replaceAll("'", "'\\''") + "'";
-  const command = ["lazydsh", "resume", accent(quote(sessionId)), ...args.map(quote)].join(" ");
+  const command = [
+    "lazydsh",
+    "resume",
+    accent(shellQuote(sessionId)),
+    ...args.map((arg) => shellQuote(arg)),
+  ].join(" ");
   return `${dim("Continue session with:")}\n  ${command}`;
 }

@@ -7,7 +7,7 @@ import {
   type Component,
 } from "@earendil-works/pi-tui";
 import type { AskUserQuestionItem, AskUserQuestionAnswer } from "@deepseek-ai/dsh-user-questions";
-import { selectionTheme } from "./picker.ts";
+import { heightBudget, selectionTheme } from "./picker.ts";
 import { accent, dim, safeText } from "./theme.ts";
 
 type Question = AskUserQuestionItem;
@@ -139,9 +139,7 @@ export class QuestionPanel implements Component {
   }
   /** Current height budget in rows; unlimited when the caller gave none. */
   private budget() {
-    const value = typeof this.height === "function" ? this.height() : this.height;
-    if (value === undefined || !Number.isFinite(value)) return Number.POSITIVE_INFINITY;
-    return Math.max(1, Math.floor(value));
+    return heightBudget(this.height);
   }
   /**
    * Option rows that fit within the panel's height budget. Long question or

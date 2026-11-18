@@ -5,7 +5,6 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 import {
   AttachmentView,
   attachmentToken,
-  hasAttachmentToken,
   isImagePath,
   pastedImagePath,
   summarizeAttachment,
@@ -131,11 +130,4 @@ test("dragged image paths are recognized without swallowing other pastes", () =>
   assert.ok(isImagePath("shot.webp"));
   assert.ok(!isImagePath("shot.svg"));
   assert.ok(!isImagePath("path/to/folder"));
-});
-
-test("attachment placeholders are recognized in prompt text", () => {
-  assert.ok(hasAttachmentToken("[Image #1] describe this"));
-  assert.ok(hasAttachmentToken("compare [File #2]"));
-  assert.ok(!hasAttachmentToken("[paste #1 +20 lines]"));
-  assert.ok(!hasAttachmentToken("no attachments"));
 });

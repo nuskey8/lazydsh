@@ -43,7 +43,7 @@ import {
 } from "./resume-directory.ts";
 import { StreamingMarkdown } from "./streaming.ts";
 import { captureConsole } from "./tui-console.ts";
-import { formatDuration, formatTokens } from "./format.ts";
+import { errorMessage, formatDuration, formatTokens } from "./format.ts";
 import { ctrlCAction } from "./interrupt.ts";
 import { dshCachePath } from "@deepseek-ai/dsh-home-paths";
 
@@ -189,7 +189,7 @@ export async function runUI(
     try {
       await action();
     } catch (error) {
-      add(label, error instanceof Error ? error.message : String(error));
+      add(label, errorMessage(error));
     } finally {
       busy = false;
       update();
@@ -561,7 +561,7 @@ export async function runUI(
       else if (!closing)
         add(
           "Error",
-          `${error instanceof Error ? error.message : String(error)}\n${
+          `${errorMessage(error)}\n${
             isAuthFailure(error)
               ? `Run /login ${nextRoute.provider}, then resend.`
               : "Run /model to choose another model."
@@ -798,7 +798,7 @@ export async function runUI(
     try {
       await runtime.close();
     } catch (error) {
-      add("Error", error instanceof Error ? error.message : String(error));
+      add("Error", errorMessage(error));
       process.exitCode = 1;
     } finally {
       finish();
@@ -818,7 +818,7 @@ export async function runUI(
         // the turn was cancelled would only be noise there.
         if (queued === 0) add("Interrupted");
       })
-      .catch((error) => add("Error", error instanceof Error ? error.message : String(error)))
+      .catch((error) => add("Error", errorMessage(error)))
       .finally(() => {
         stopping = false;
         drainQueue();
@@ -876,7 +876,7 @@ export async function runUI(
       try {
         source = await runtime.credentialSource(provider);
       } catch (error) {
-        if (!closing) add("Error", error instanceof Error ? error.message : String(error));
+        if (!closing) add("Error", errorMessage(error));
       } finally {
         checkingAuth = false;
       }
@@ -1022,7 +1022,7 @@ export async function runUI(
         })
         .catch((error) => {
           if (composer.children.includes(picker)) dismissPanel();
-          add("Error", error instanceof Error ? error.message : String(error));
+          add("Error", errorMessage(error));
         });
       return;
     }
@@ -1037,8 +1037,7 @@ export async function runUI(
           tui.requestRender();
         }
       };
-      const handleError = (error: unknown) =>
-        add("Error", error instanceof Error ? error.message : String(error));
+      const handleError = (error: unknown) => add("Error", errorMessage(error));
       if (jobCommand[2]) void perform(jobCommand[2]).catch(handleError);
       else {
         const picker = select([], stopping ? "Stop job" : "Background jobs", (id) => {
@@ -1165,7 +1164,7 @@ export async function runUI(
         })
         .catch((error) => {
           if (composer.children.includes(picker)) dismissPanel();
-          add("Error", error instanceof Error ? error.message : String(error));
+          add("Error", errorMessage(error));
         })
         .finally(() => {
           busy = false;
@@ -1193,7 +1192,7 @@ export async function runUI(
         .catch((error) => {
           if (panel) transcript.removeChild(panel);
           stats = undefined;
-          add("Error", error instanceof Error ? error.message : String(error));
+          add("Error", errorMessage(error));
         })
         .finally(() => {
           busy = false;
@@ -1315,7 +1314,7 @@ export async function runUI(
           add(result.finishReason === "error" ? "Error" : "dsh", result.finalResponse, true);
         else if (result.finishReason === "error") add("Error", "dsh reported an error.");
       } catch (error) {
-        if (!closing) add("Error", error instanceof Error ? error.message : String(error));
+        if (!closing) add("Error", errorMessage(error));
       } finally {
         if (ownsTurn) {
           settleThinking();
@@ -1412,7 +1411,7 @@ export async function runUI(
         await hooks.afterFirstPaint();
       } catch (error) {
         startupFailed = true;
-        add("Error", error instanceof Error ? error.message : String(error));
+        add("Error", errorMessage(error));
       } finally {
         starting = false;
         update();

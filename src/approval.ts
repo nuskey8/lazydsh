@@ -6,8 +6,8 @@ import {
   visibleWidth,
   type Component,
 } from "@earendil-works/pi-tui";
-import { selectionTheme } from "./picker.ts";
-import { detailDiff, detailLabel, detailText, prettyArguments } from "./detail.ts";
+import { heightBudget, selectionTheme } from "./picker.ts";
+import { detailDiff, detailLabel, detailText, isRecord, prettyArguments } from "./detail.ts";
 import { dim, gray, safeText } from "./theme.ts";
 
 export type ApprovalChoice = "allowed-once" | "rejected";
@@ -61,10 +61,6 @@ const OPERATION_FIELDS = [
   "prompt",
   "input",
 ] as const;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function parseArguments(raw: string | undefined): Record<string, unknown> | undefined {
   const text = raw?.trim();
@@ -140,9 +136,7 @@ export class ApprovalPanel implements Component {
     if (option) this.onSelect?.(option.value);
   }
   private budget() {
-    const value = typeof this.height === "function" ? this.height() : this.height;
-    if (value === undefined || !Number.isFinite(value)) return Number.POSITIVE_INFINITY;
-    return Math.max(1, Math.floor(value));
+    return heightBudget(this.height);
   }
   /** One argument field, with terminal control sequences removed. */
   private field(...keys: string[]): string | undefined {

@@ -10,6 +10,13 @@ import {
 } from "@earendil-works/pi-tui";
 import { accent, dim, safeText } from "./theme.ts";
 
+/** Rows a panel may draw, or infinity when the caller gave no budget. */
+export function heightBudget(height?: number | (() => number)): number {
+  const value = typeof height === "function" ? height() : height;
+  if (value === undefined || !Number.isFinite(value)) return Number.POSITIVE_INFINITY;
+  return Math.max(1, Math.floor(value));
+}
+
 export const selectionTheme = {
   selectedPrefix: accent,
   selectedText: (text: string) => accent(text.replace(/^→ /, "› ")),
