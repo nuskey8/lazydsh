@@ -76,6 +76,9 @@ test("CLI help and validation", async () => {
   assert.equal(tooMany.code, 1);
   assert.match(tooMany.stderr, /at most one provider/);
   assert.doesNotMatch(tooMany.stderr, /A lazier terminal UI/);
+  const wrongJson = await cli(executable, ["login", "codex", "--json"]);
+  assert.equal(wrongJson.code, 1);
+  assert.match(wrongJson.stderr, /--json is only available with ask/);
   for (const action of ["login", "logout"]) {
     const picker = await cli(executable, [action]);
     assert.equal(picker.code, 1);
@@ -114,7 +117,10 @@ test("subcommand help", async () => {
     assert.equal(result.stderr, "");
     if (["login", "logout", "upgrade"].includes(command))
       assert.doesNotMatch(result.stdout, /--model|--effort|--permission/);
-    if (command === "ask") assert.match(result.stdout, /--permission/);
+    if (command === "ask") {
+      assert.match(result.stdout, /--permission/);
+      assert.match(result.stdout, /--json/);
+    }
     if (command === "resume") assert.match(result.stdout, /resume \[session-id\]/);
     if (command === "upgrade") assert.doesNotMatch(result.stdout, /--home|--cwd|--patch/);
   }
@@ -186,6 +192,31 @@ test("ask, stdin, authentication and logout", async () => {
     assert.equal(result.stdout, "Plain answer.\n");
     const body = JSON.parse(await readFile(bodyFile, "utf8"));
     assert.ok(JSON.stringify(body.messages).includes("/explain this\\n\\npiped context"));
+    const json = await cli(
+      executable,
+      ["ask", "/explain", "this", "--json", ...flags],
+      "piped context",
+      env,
+    );
+    assert.equal(json.code, 0, json.stderr);
+    const events = json.stdout
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    const session = events[0]!;
+    assert.equal(session.type, "session");
+    assert.equal(typeof session.sessionId, "string");
+    assert.equal(typeof session.cwd, "string");
+    assert.ok(
+      events.some((item) => item.type === "text" && item.text === "Plain answer."),
+      json.stdout,
+    );
+    assert.deepEqual(events.at(-1), {
+      type: "final",
+      sessionId: session.sessionId,
+      reason: { kind: "completed" },
+      text: "Plain answer.",
+    });
     const failed = await cli(executable, ["ask", "hello", ...flags], "", {
       ...env,
       TEST_UNAUTHORIZED: "1",
@@ -193,6 +224,22 @@ test("ask, stdin, authentication and logout", async () => {
     assert.equal(failed.code, 1);
     assert.equal(failed.stdout, "");
     assert.match(failed.stderr, /lazydsh login opencode-go/);
+    const failedJson = await cli(executable, ["ask", "hello", "--json", ...flags], "", {
+      ...env,
+      TEST_UNAUTHORIZED: "1",
+    });
+    assert.equal(failedJson.code, 1);
+    const failedEvents = failedJson.stdout
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    assert.equal(failedEvents[0]!.type, "session");
+    assert.equal(failedEvents.at(-1)!.type, "error");
+    assert.equal(
+      failedEvents.some((item) => item.type === "final"),
+      false,
+    );
+    assert.match(String(failedEvents.at(-1)!.message), /lazydsh login opencode-go/);
     const logout = await cli(
       executable,
       ["logout", "opencode-go", "--home", join(directory, "home")],

@@ -1,4 +1,6 @@
 import { formatNotification, terminalColor } from "./theme.ts";
+import type { SessionEvent } from "@deepseek-ai/dsh-session";
+import type { JsonProjection } from "./json-stream.ts";
 import type { Runtime } from "./runtime.ts";
 
 export type CommandOptions = {
@@ -8,6 +10,8 @@ export type CommandOptions = {
   prompt?: string;
   resume?: string;
   permission?: string;
+  /** Emit the DSH-compatible newline-delimited event stream instead of final text. */
+  json?: boolean;
 };
 
 export async function runCommand(runtime: Runtime, config: CommandOptions, signal: AbortSignal) {
@@ -53,8 +57,9 @@ export async function runCommand(runtime: Runtime, config: CommandOptions, signa
     interactionError = new Error(message);
     void runtime.cancel().catch(() => {});
   };
+  let projection: JsonProjection | undefined;
   try {
-    await runtime.open(
+    const sessionId = await runtime.open(
       { provider: config.provider, model: config.model },
       {
         resume: config.resume,
@@ -76,15 +81,60 @@ export async function runCommand(runtime: Runtime, config: CommandOptions, signa
       },
     );
     if (config.permission) await runtime.choices("permissions", config.permission);
-    const result = await runtime.run(config.prompt, undefined, [], {
-      commands: false,
-      authenticate: false,
-    });
+    if (config.json) {
+      const { openJsonProjection } = await import("./json-stream.ts");
+      projection = openJsonProjection(
+        sessionId,
+        runtime.session?.header.cwd ?? process.cwd(),
+        process.stdout,
+      );
+    }
+    const activeProjection = projection;
+    const result = await runtime.run(
+      config.prompt,
+      activeProjection === undefined
+        ? undefined
+        : (event) => {
+            if (event.method === "session.event")
+              activeProjection.event(event.params.sessionId, event.params.event);
+          },
+      [],
+      { commands: false, authenticate: false },
+    );
     if (interactionError) throw interactionError;
+    if (projection !== undefined) {
+      const reason = result.events.findLast((event) => event.type === "turn/end")?.data.reason;
+      projection.finish(result.finalResponse, reason);
+      if (result.finishReason !== "completed") {
+        const { ReportedJsonError } = await import("./json-stream.ts");
+        throw new ReportedJsonError(failureMessage(reason, result.finishReason));
+      }
+      return;
+    }
     if (result.finishReason !== "completed")
       throw new Error(result.finalResponse || `Request ${result.finishReason}.`);
     process.stdout.write(result.finalResponse + (result.finalResponse.endsWith("\n") ? "" : "\n"));
   } finally {
+    projection?.dispose();
     await runtime.close();
+  }
+}
+
+/** Describe a durable turn reason for the human-readable stderr line. */
+function failureMessage(
+  reason: SessionEvent<"turn/end">["data"]["reason"] | undefined,
+  finishReason: string,
+): string {
+  switch (reason?.kind) {
+    case "error":
+      return reason.error.message;
+    case "aborted":
+      return "Request aborted.";
+    case "blocked":
+      return "Request blocked.";
+    case "max-tokens":
+      return "The response reached its output-token limit.";
+    default:
+      return `Request ${finishReason}.`;
   }
 }
