@@ -92,28 +92,31 @@ interface StackRow {
   total: number;
 }
 
+const isBlankLine = (line: string) => !stripVTControlCharacters(line).trim();
+
 function stackRows(
   children: readonly Component[],
   width: number,
 ): { lines: string[]; rows: StackRow[] } {
   const lines: string[] = [];
   const rows: StackRow[] = [];
-  const blank = (line: string) => !stripVTControlCharacters(line).trim();
   for (const child of children) {
     const next = child.render(width);
     if (!next.length) continue;
-    if (child instanceof ThinkingView && lines.length && !blank(lines.at(-1)!)) lines.push("");
+    if (child instanceof ThinkingView && lines.length && !isBlankLine(lines.at(-1)!))
+      lines.push("");
     // Drop only this child's leading blank rows when the previous child already
     // ended with one. Never mutate `next`: cached components reuse that array.
     let start = 0;
-    if (lines.length && blank(lines.at(-1)!)) {
-      while (start < next.length && blank(next[start])) start++;
+    if (lines.length && isBlankLine(lines.at(-1)!)) {
+      while (start < next.length && isBlankLine(next[start])) start++;
     }
     const rowStart = lines.length;
     for (let index = start; index < next.length; index++) lines.push(next[index]);
     // Keep one empty row under a Thinking block so the answer (or tool/summary)
     // that follows starts as its own block instead of hugging the header.
-    if (child instanceof ThinkingView && lines.length && !blank(lines.at(-1)!)) lines.push("");
+    if (child instanceof ThinkingView && lines.length && !isBlankLine(lines.at(-1)!))
+      lines.push("");
     const height = next.length - start;
     if (height > 0)
       rows.push({
@@ -160,8 +163,7 @@ export class Transcript extends Container {
 
   private layout(width: number): { lines: string[]; rows: StackRow[] } {
     const { lines, rows } = stackRows(this.children, width);
-    const blank = (line: string) => !stripVTControlCharacters(line).trim();
-    while (lines.length && blank(lines.at(-1)!)) lines.pop();
+    while (lines.length && isBlankLine(lines.at(-1)!)) lines.pop();
     const height = lines.length;
     const visible = rows
       .filter((row) => row.start < height)
@@ -208,9 +210,8 @@ export class Transcript extends Container {
 export class QueueView extends Container {
   override render(width: number): string[] {
     const lines = renderStack(this.children, width);
-    const blank = (line: string) => !stripVTControlCharacters(line).trim();
-    while (lines.length && blank(lines[0])) lines.shift();
-    while (lines.length && blank(lines.at(-1)!)) lines.pop();
+    while (lines.length && isBlankLine(lines[0])) lines.shift();
+    while (lines.length && isBlankLine(lines.at(-1)!)) lines.pop();
     return lines.length ? [...lines, ""] : [];
   }
 }

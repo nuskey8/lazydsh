@@ -4,7 +4,7 @@ import { stripVTControlCharacters } from "node:util";
 import { visibleWidth, type TuiMouseEvent } from "@earendil-works/pi-tui";
 import { ToolLog } from "../src/tools.ts";
 import type { SessionEvent } from "@deepseek-ai/dsh-session";
-import { eventText } from "../src/runtime.ts";
+import { eventText } from "../src/runtime-events.ts";
 
 function emit(log: ToolLog, type: string, data: unknown, sessionId = "root") {
   const output = eventText({

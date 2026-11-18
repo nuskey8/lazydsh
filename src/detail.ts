@@ -15,7 +15,7 @@ export interface FileDiff {
 
 type Change = { kind: "same" | "add" | "del"; text: string };
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 

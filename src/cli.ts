@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { formatNotification, terminalColor } from "./theme.ts";
+import { errorMessage } from "./format.ts";
 import { loadModel, preferencesPath } from "./preferences.ts";
 import { normalizeProvider } from "./provider.ts";
 import type {} from "./plugin.ts";
@@ -311,7 +312,7 @@ main().catch((error) => {
   console.error(
     formatNotification(
       "Error",
-      error instanceof Error ? error.message : String(error),
+      errorMessage(error),
       terminalColor(process.stderr) || terminalColor(process.stdout),
     ),
   );

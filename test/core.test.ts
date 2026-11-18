@@ -1,7 +1,7 @@
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { validateRoute } from "../src/catalog.ts";
-import { isAuthFailure } from "../src/runtime.ts";
+import { isAuthFailure } from "../src/runtime-events.ts";
 import { canRunDuringTurn, shouldQueueDuringTurn } from "../src/ui.ts";
 import { formatNotification, safeText } from "../src/theme.ts";
 

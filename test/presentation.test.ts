@@ -172,7 +172,8 @@ test("Thinking shows elapsed seconds and freezes them on finish", () => {
   }
 });
 
-test("tool and Thinking groups keep one empty row before the composer and chat", () => {
+test("Thinking and tool rows keep exactly one blank row between blocks", () => {
+  // Tool rows separate cleanly from the answer that follows.
   const transcript = new Transcript();
   assert.deepEqual(transcript.render(80), []);
   transcript.addChild(new ToolRow("✓ read src/main.ts"));
@@ -186,6 +187,8 @@ test("tool and Thinking groups keep one empty row before the composer and chat",
   assert.match(lines[answer - 2], /read src\/main.ts/);
   assert.equal(lines.at(-1), "");
   assert.ok(lines.at(-2)?.trim());
+
+  // A live Thinking row keeps one blank row above and below it.
   const tui = new TuiMainScreen(new ProcessTerminal());
   tui.requestRender = () => {};
   const view = new ThinkingView(tui);
@@ -193,15 +196,50 @@ test("tool and Thinking groups keep one empty row before the composer and chat",
     const activity = new Transcript();
     activity.addChild(new SentMessage("hello"));
     activity.addChild(view);
-    view.finish();
-    const rendered = activity.render(80).map(stripVTControlCharacters);
+    let rendered = activity.render(80).map(stripVTControlCharacters);
     const thought = rendered.findIndex((line) => /\d+s/.test(line));
     assert.equal(rendered[thought - 1].trim(), "");
     assert.match(rendered[thought - 2], /┃ hello/);
+    view.finish();
+    activity.addChild(new Text("assistant answer", 2, 1));
+    rendered = activity.render(80).map(stripVTControlCharacters);
+    const liveAnswer = rendered.findIndex((line) => line.includes("assistant answer"));
+    assert.equal(liveAnswer - thought, 2);
+    assert.equal(rendered[thought + 1], "");
     assert.equal(rendered.at(-1), "");
   } finally {
     view.finish();
   }
+
+  // Tools before Thinking keep one blank row above and below the header.
+  const tools = new Transcript();
+  const thinking = new ThinkingView(tui);
+  tools.addChild(new ToolRow("✓ read file"));
+  tools.addChild(thinking);
+  try {
+    let rows = tools.render(80).map((line) => stripVTControlCharacters(line).trimEnd());
+    const index = rows.findIndex((line) => line.includes("Thinking"));
+    assert.equal(rows[index - 1], "");
+    assert.match(rows[index - 2], /read file/);
+    thinking.finish();
+    rows = tools.render(80).map((line) => stripVTControlCharacters(line).trimEnd());
+    assert.match(rows.at(-2)!, /^  ✓ Thinking \(\d+s\)$/);
+    assert.equal(rows.at(-3), "");
+    assert.doesNotMatch(rows.join("\n"), /↑|↓/);
+  } finally {
+    thinking.finish();
+  }
+
+  // A finished Thinking row still leaves exactly one blank row below it.
+  const below = new Transcript();
+  const staticThinking = new ThinkingView(undefined, { text: "a thought", duration: 2000 });
+  below.addChild(staticThinking);
+  below.addChild(new Text("assistant answer", 2, 1));
+  const rows = below.render(80).map((line) => stripVTControlCharacters(line).trimEnd());
+  const header = rows.findIndex((line) => /✓ Thinking/.test(line));
+  assert.equal(rows.findIndex((line) => line.includes("assistant answer")) - header, 2);
+  assert.equal(rows[header + 1], "");
+  assert.equal(rows.filter((line) => line === "").length, 2);
 });
 
 test("notifications use icons and labels; adjacent message boundaries have one blank row", () => {
@@ -233,7 +271,7 @@ test("authentication input never renders its secret", () => {
   assert.equal(input.getValue(), "private-api-key");
 });
 
-test("Thinking keeps its place above later tools, answers and notifications", () => {
+test("Thinking keeps its place as tools and later steps arrive", () => {
   const tui = new TuiMainScreen(new ProcessTerminal());
   tui.requestRender = () => {};
   const transcript = new Transcript();
@@ -259,47 +297,31 @@ test("Thinking keeps its place above later tools, answers and notifications", ()
   } finally {
     thinking.finish();
   }
-});
 
-test("tools and Thinking have exactly one blank row; unknown tokens stay hidden after completion", () => {
-  const tui = new TuiMainScreen(new ProcessTerminal());
-  tui.requestRender = () => {};
-  const transcript = new Transcript();
-  const thinking = new ThinkingView(tui);
-  transcript.addChild(new ToolRow("✓ read file"));
-  transcript.addChild(thinking);
+  // A second Thinking step settles after the tools of the first step.
+  const steps = new Transcript();
+  const first = new ThinkingView(tui);
+  const second = new ThinkingView(tui);
   try {
-    let lines = transcript.render(80).map((line) => stripVTControlCharacters(line).trimEnd());
-    const index = lines.findIndex((line) => line.includes("Thinking"));
-    assert.equal(lines[index - 1], "");
-    assert.match(lines[index - 2], /read file/);
-    thinking.finish();
-    lines = transcript.render(80).map((line) => stripVTControlCharacters(line).trimEnd());
-    assert.match(lines.at(-2)!, /^  ✓ Thinking \(\d+s\)$/);
-    assert.equal(lines.at(-3), "");
-    assert.doesNotMatch(lines.join("\n"), /↑|↓/);
+    steps.addChild(first);
+    steps.addChild(new ToolRow("✓ read a.ts"));
+    steps.addChild(new ToolRow("✓ glob **/*.ts"));
+    assert.deepEqual(
+      steps.children.map((item) => item.constructor.name),
+      ["ThinkingView", "ToolRow", "ToolRow"],
+    );
+    first.finish();
+    steps.addChild(second);
+    second.finish();
+    assert.deepEqual(
+      steps.children.map((item) => item.constructor.name),
+      ["ThinkingView", "ToolRow", "ToolRow", "ThinkingView"],
+    );
+    assert.equal(steps.children[0], first);
+    assert.equal(steps.children[3], second);
   } finally {
-    thinking.finish();
-  }
-});
-
-test("Thinking keeps one blank row below it before the next block", () => {
-  const tui = new TuiMainScreen(new ProcessTerminal());
-  tui.requestRender = () => {};
-  const transcript = new Transcript();
-  const thinking = new ThinkingView(undefined, { text: "a thought", duration: 2000 });
-  try {
-    transcript.addChild(thinking);
-    transcript.addChild(new Text("assistant answer", 2, 1));
-    const lines = transcript.render(80).map((line) => stripVTControlCharacters(line).trimEnd());
-    const header = lines.findIndex((line) => /✓ Thinking/.test(line));
-    const answer = lines.findIndex((line) => line.includes("assistant answer"));
-    assert.equal(answer - header, 2);
-    assert.equal(lines[header + 1], "");
-    assert.equal(lines[header + 2]?.trim(), "assistant answer");
-    assert.equal(lines.filter((line) => line === "").length, 2);
-  } finally {
-    thinking.finish();
+    first.finish();
+    second.finish();
   }
 });
 
@@ -420,40 +442,4 @@ test("transcript routes a header click to the row under the pointer", () => {
   history.render(80);
   assert.equal(history.handleMouse(mouse("click", 2)), undefined);
   assert.equal(row.isExpanded, true);
-});
-
-test("successive Thinking blocks settle between the tools of each step", () => {
-  const tui = new TuiMainScreen(new ProcessTerminal());
-  tui.requestRender = () => {};
-  const transcript = new Transcript();
-  const first = new ThinkingView(tui);
-  const read = new ToolRow("✓ read a.ts");
-  const glob = new ToolRow("✓ glob **/*.ts");
-  const second = new ThinkingView(tui);
-  try {
-    transcript.addChild(first);
-    transcript.addChild(read);
-    transcript.addChild(glob);
-    assert.deepEqual(
-      transcript.children.map((item) => item.constructor.name),
-      ["ThinkingView", "ToolRow", "ToolRow"],
-    );
-    first.finish();
-
-    transcript.addChild(second);
-    assert.deepEqual(
-      transcript.children.map((item) => item.constructor.name),
-      ["ThinkingView", "ToolRow", "ToolRow", "ThinkingView"],
-    );
-    second.finish();
-    assert.deepEqual(
-      transcript.children.map((item) => item.constructor.name),
-      ["ThinkingView", "ToolRow", "ToolRow", "ThinkingView"],
-    );
-    assert.equal(transcript.children[0], first);
-    assert.equal(transcript.children[3], second);
-  } finally {
-    first.finish();
-    second.finish();
-  }
 });

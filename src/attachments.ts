@@ -84,10 +84,6 @@ export function attachmentToken(kind: "image" | "file", number: number) {
   return `[${kind === "image" ? "Image" : "File"} #${number}]`;
 }
 
-export function hasAttachmentToken(text: string): boolean {
-  return /\[(?:Image|File) #\d+\]/.test(text);
-}
-
 export function attachmentLine(summary: AttachmentSummary, index?: number) {
   const prefix = index === undefined ? "" : `${dim(`[${index}]`)} `;
   return `${prefix}${safeText(summary.name)} ${dim(`· ${summary.kind} · ${summary.detail}`)}`;

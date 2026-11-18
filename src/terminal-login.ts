@@ -156,5 +156,3 @@ export async function terminalAuth(
     tui.stop({ preserveScreen: true });
   }
 }
-
-export { openAuthUrl } from "./open-url.ts";

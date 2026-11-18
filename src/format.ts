@@ -23,6 +23,18 @@ export function formatTokens(tokens: number): string {
   return tokenFormat.format(tokens);
 }
 
+/** A user-facing message for any thrown value. */
+export function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+const SHELL_SAFE = /^[a-zA-Z0-9_./:=+@-]+$/;
+
+/** Quote one shell argument only when it contains unsafe characters. */
+export function shellQuote(value: string): string {
+  return SHELL_SAFE.test(value) ? value : "'" + value.replaceAll("'", "'\\''") + "'";
+}
+
 export function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes < 0) return "?";
   const units = ["B", "KB", "MB", "GB", "TB"] as const;

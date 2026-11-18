@@ -44,9 +44,6 @@ import type { ReferenceAutocompleteItem } from "./autocomplete.ts";
 import { registerCommands } from "./native-commands.ts";
 import { contentText, isAuthFailure, type RuntimeEvent } from "./runtime-events.ts";
 
-export { eventText, isAuthFailure } from "./runtime-events.ts";
-export type { RuntimeEvent } from "./runtime-events.ts";
-
 export type Route = { provider: string; model: string };
 export type QuestionResult = AskUserQuestionAnswer | { cancelled: true };
 /** Where the credential for a route currently comes from. */
