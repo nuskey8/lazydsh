@@ -36,6 +36,7 @@ import {
 import { StreamingMarkdown } from "./streaming.ts";
 import { captureConsole } from "./tui-console.ts";
 import { formatDuration, formatTokens } from "./format.ts";
+import { ctrlCAction } from "./interrupt.ts";
 import { dshCachePath } from "@deepseek-ai/dsh-home-paths";
 
 import {
@@ -752,6 +753,27 @@ export async function runUI(
     }
   }
 
+  /** Stop the live turn but keep the chat open (Esc / Ctrl+C). */
+  function cancelTurn() {
+    if (stopping) return;
+    const queued = queue.length;
+    stopping = true;
+    update();
+    void runtime
+      .cancel()
+      .then(() => {
+        // A queued prompt starts as soon as the turn stops, so a notice saying
+        // the turn was cancelled would only be noise there.
+        if (queued === 0) add("Interrupted");
+      })
+      .catch((error) => add("Error", error instanceof Error ? error.message : String(error)))
+      .finally(() => {
+        stopping = false;
+        drainQueue();
+        update();
+      });
+  }
+
   editor.onSubmit = async (text: string) => {
     const fromQueue = submittingQueued;
     if (closing) return;
@@ -765,7 +787,7 @@ export async function runUI(
         enqueue(text);
         return;
       }
-      add("Error", "A response is running. Press Esc to stop it.");
+      add("Error", "A response is running. Press Esc or Ctrl+C to stop it.");
       return;
     }
     if (
@@ -1276,33 +1298,22 @@ export async function runUI(
 
   tui.addInputListener((data) => {
     if (matchesKey(data, "ctrl+c")) {
-      if (editor.getText().length > 0 || pendingFiles.length > 0) {
+      const action = ctrlCAction({
+        draft: editor.getText().length > 0 || pendingFiles.length > 0,
+        active: running,
+        cancelling: stopping,
+      });
+      if (action === "clear") {
         editor.setText("");
         pendingFiles = [];
         update();
-      } else void stop();
+      } else if (action === "interrupt") cancelTurn();
+      else void stop();
       return { consume: true };
     }
     if (matchesKey(data, "escape") && !selecting) {
       if (decision) decision(null);
-      else if (busy || running) {
-        const queued = queue.length;
-        stopping = true;
-        update();
-        void runtime
-          .cancel()
-          .then(() => {
-            // A queued prompt starts as soon as the turn stops, so a notice
-            // saying the turn was cancelled would only be noise there.
-            if (queued === 0) add("Interrupted");
-          })
-          .catch((error) => add("Error", error instanceof Error ? error.message : String(error)))
-          .finally(() => {
-            stopping = false;
-            drainQueue();
-            update();
-          });
-      }
+      else if (busy || running) cancelTurn();
       return { consume: true };
     }
   });
