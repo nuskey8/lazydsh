@@ -110,6 +110,9 @@ function stackRows(
     }
     const rowStart = lines.length;
     for (let index = start; index < next.length; index++) lines.push(next[index]);
+    // Keep one empty row under a Thinking block so the answer (or tool/summary)
+    // that follows starts as its own block instead of hugging the header.
+    if (child instanceof ThinkingView && lines.length && !blank(lines.at(-1)!)) lines.push("");
     const height = next.length - start;
     if (height > 0)
       rows.push({

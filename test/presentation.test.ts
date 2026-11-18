@@ -283,6 +283,26 @@ test("tools and Thinking have exactly one blank row; unknown tokens stay hidden 
   }
 });
 
+test("Thinking keeps one blank row below it before the next block", () => {
+  const tui = new TuiMainScreen(new ProcessTerminal());
+  tui.requestRender = () => {};
+  const transcript = new Transcript();
+  const thinking = new ThinkingView(undefined, { text: "a thought", duration: 2000 });
+  try {
+    transcript.addChild(thinking);
+    transcript.addChild(new Text("assistant answer", 2, 1));
+    const lines = transcript.render(80).map((line) => stripVTControlCharacters(line).trimEnd());
+    const header = lines.findIndex((line) => /✓ Thinking/.test(line));
+    const answer = lines.findIndex((line) => line.includes("assistant answer"));
+    assert.equal(answer - header, 2);
+    assert.equal(lines[header + 1], "");
+    assert.equal(lines[header + 2]?.trim(), "assistant answer");
+    assert.equal(lines.filter((line) => line === "").length, 2);
+  } finally {
+    thinking.finish();
+  }
+});
+
 test("mentions and pasted paths are highlighted without changing text or cursor markers", () => {
   const text = 'Read @src/main.ts @"folder with spaces/file.ts" and ./notes.md user@example.com';
   const sent = new SentMessage(text);
