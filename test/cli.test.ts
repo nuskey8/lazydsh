@@ -87,6 +87,22 @@ test("CLI help and validation", async () => {
   assert.match(upgrade.stderr, /Source\/link installations/);
 });
 
+test("version flag", async () => {
+  const { version } = JSON.parse(await readFile(resolve("package.json"), "utf8")) as {
+    version: string;
+  };
+  for (const args of [["--version"], ["-v"], ["ask", "--version"], ["upgrade", "-v"]]) {
+    const result = await cli(executable, args);
+    assert.equal(result.code, 0, result.stderr);
+    assert.equal(result.stdout, `lazydsh ${version}\n`);
+    assert.equal(result.stderr, "");
+  }
+  const help = await cli(executable, ["--help"]);
+  assert.match(help.stdout, /-v, --version\s+Show version/);
+  const subcommandHelp = await cli(executable, ["upgrade", "--help"]);
+  assert.match(subcommandHelp.stdout, /-v, --version\s+Show version/);
+});
+
 test("subcommand help", async () => {
   for (const command of ["ask", "resume", "login", "logout", "upgrade"]) {
     const result = await cli(executable, [command, "--help"]);

@@ -68,6 +68,7 @@ Flags:
   --patch <path>          Additional dsh Cordis patch (repeatable)
   --list                  List providers and model IDs
   -h, --help              Show help
+  -v, --version           Show version
 ```
 
 ## コマンド
