@@ -83,9 +83,8 @@ Flags:
 | `/model`      | —                  | Select provider and model                                              |
 | `/login`      | `[provider]`       | Log in to a provider with OAuth or an API key                          |
 | `/logout`     | `[provider]`       | Remove saved provider credentials                                      |
-| `/file`       | `<path>            | clear`                                                                 | Attach a file/image to the next message or clear attachments |
 | `/dsh`        | `<command> [args]` | Run native dsh commands (even if they conflict with TUI command names) |
-| `/effort`     | `[level            | default]`                                                              | Select the reasoning effort for the current model            |
+| `/effort`     | `[level            | default]`                                                              | Select the reasoning effort for the current model |
 | `/new`        | —                  | Start a new conversation while keeping the current display             |
 | `/rename`     | `[title]`          | Rename the current session title                                       |
 | `/fork`       | —                  | Fork the session from a completed turn                                 |
@@ -98,8 +97,8 @@ Flags:
 | `/session`    | —                  | Show the current session ID                                            |
 | `/status`     | —                  | Display model, session, usage, account limits, and configuration       |
 | `/compact`    | —                  | Summarize session history to clean up context                          |
-| `/plan`       | `[off              | message]`                                                              | Start/end plan mode or give planning instructions            |
-| `/goal`       | `[objective        | clear                                                                  | edit objective                                               | pause | resume]` | Create, view, edit, pause, resume, or delete goals |
+| `/plan`       | `[off              | message]`                                                              | Start/end plan mode or give planning instructions |
+| `/goal`       | `[objective        | clear                                                                  | edit objective                                    | pause | resume]` | Create, view, edit, pause, resume, or delete goals |
 | `/feedback`   | `<text>`           | Record feedback for dsh regarding the current session                  |
 | `/export`     | `[path.zip]`       | Export sessions, child sessions, and attachments to a ZIP file         |
 | `/quit`       | —                  | Exit lazydsh                                                           |

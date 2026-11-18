@@ -33,3 +33,28 @@ test("@ completion combines native references and preserves quoted paths, skills
   assert.equal(queries.length, 1);
   assert.equal(await provider.getSuggestions(["@"], 0, 1, { signal: AbortSignal.abort() }), null);
 });
+
+test("@ image selections attach instead of inserting a text reference", async () => {
+  const attached: string[] = [];
+  const provider = new Autocomplete([], process.cwd(), async () => [
+    { value: "@shot.png", label: "@shot.png", description: "file", path: "shot.png" },
+    { value: "@src/main.ts", label: "@src/main.ts", description: "file", path: "src/main.ts" },
+  ]);
+  provider.onAttach = (path) => attached.push(path);
+  const signal = new AbortController().signal;
+  const line = "look at @shot";
+  const suggestions = await provider.getSuggestions([line], 0, line.length, { signal });
+  assert.ok(suggestions);
+  const image = suggestions.items.find((item) => item.value === "@shot.png");
+  assert.ok(image);
+  assert.match(image.description ?? "", /attach/);
+  const result = provider.applyCompletion([line], 0, line.length, image, suggestions.prefix);
+  assert.deepEqual(attached, ["shot.png"]);
+  assert.equal(result.lines[0], "look at ");
+  assert.equal(result.cursorCol, 8);
+
+  const file = suggestions.items.find((item) => item.value === "@src/main.ts");
+  assert.ok(file);
+  const inserted = provider.applyCompletion([line], 0, line.length, file, suggestions.prefix);
+  assert.equal(inserted.lines[0], "look at @src/main.ts ");
+});

@@ -22,3 +22,17 @@ const tokenFormat = new Intl.NumberFormat("en-US", {
 export function formatTokens(tokens: number): string {
   return tokenFormat.format(tokens);
 }
+
+export function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return "?";
+  const units = ["B", "KB", "MB", "GB", "TB"] as const;
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit++;
+  }
+  if (unit === 0) return `${Math.round(value)} B`;
+  const rounded = value >= 10 ? String(Math.round(value)) : value.toFixed(1).replace(/\.0$/, "");
+  return `${rounded} ${units[unit]}`;
+}

@@ -2,6 +2,7 @@ import { extractAnsiCode } from "@earendil-works/pi-tui/dist/utils.js";
 import type { TuiMouseDispatchResult } from "@earendil-works/pi-tui/dist/tui.js";
 import { stripVTControlCharacters } from "node:util";
 import { formatDuration } from "./format.ts";
+import { attachmentLine, type AttachmentSummary } from "./attachments.ts";
 import { accent, dim, gray, safeText, formatNotification } from "./theme.ts";
 import { formatStats, type SessionStats } from "./stats.ts";
 import { detailText } from "./detail.ts";
@@ -234,7 +235,7 @@ function highlightReferences(text: string) {
   const plain = parts.filter((_, index) => index % 2 === 0).join("");
   const ranges = [
     ...plain.matchAll(
-      /(?<!\S)(?:@"[^"\n]*(?:"|$)|@[^\s"]+|"(?:\/|\.\.?\/)[^"\n]*"|'(?:\/|\.\.?\/)[^'\n]*'|(?:file:\/\/|\/|\.\.?\/|[A-Za-z]:[\\/])[^\s]+|\[paste #\d+(?: (?:\+\d+ lines|\d+ chars))?\])/g,
+      /(?<!\S)(?:@"[^"\n]*(?:"|$)|@[^\s"]+|"(?:\/|\.\.?\/)[^"\n]*"|'(?:\/|\.\.?\/)[^'\n]*'|(?:file:\/\/|\/|\.\.?\/|[A-Za-z]:[\\/])[^\s]+|\[paste #\d+(?: (?:\+\d+ lines|\d+ chars))?\]|\[(?:Image|File) #\d+\])/g,
     ),
   ];
   if (!ranges.length) return text;
@@ -260,11 +261,15 @@ function highlightReferences(text: string) {
 
 export class SentMessage implements Component {
   private readonly content: Text;
+  private readonly attachmentText?: Text;
   private readonly command: boolean;
   private readonly queued: boolean;
   private cachedWidth = -1;
   private cachedLines?: string[];
-  constructor(text: string, options: { queued?: boolean } = {}) {
+  constructor(
+    text: string,
+    options: { queued?: boolean; attachments?: readonly AttachmentSummary[] } = {},
+  ) {
     this.command = /^\/\S/.test(text.trimStart());
     this.queued = options.queued === true;
     const value = safeText(text);
@@ -273,9 +278,17 @@ export class SentMessage implements Component {
       0,
       0,
     );
+    const attachments = options.attachments ?? [];
+    if (attachments.length)
+      this.attachmentText = new Text(
+        attachments.map((file) => attachmentLine(file)).join("\n"),
+        0,
+        0,
+      );
   }
   invalidate() {
     this.content.invalidate();
+    this.attachmentText?.invalidate();
     this.cachedWidth = -1;
     this.cachedLines = undefined;
   }
@@ -291,11 +304,13 @@ export class SentMessage implements Component {
         : width >= 2
           ? rail("┃")
           : "";
+    const inner = Math.max(1, width - visibleWidth(prefix));
     const lines = [
       "",
-      ...this.content
-        .render(Math.max(1, width - visibleWidth(prefix)))
-        .map((line) => truncateToWidth(prefix + line, width)),
+      ...[
+        ...(this.attachmentText ? this.attachmentText.render(inner) : []),
+        ...this.content.render(inner),
+      ].map((line) => truncateToWidth(prefix + line, width)),
       "",
     ];
     this.cachedWidth = width;
@@ -305,8 +320,8 @@ export class SentMessage implements Component {
 }
 
 export class QueuedMessage extends SentMessage {
-  constructor(text: string) {
-    super(text, { queued: true });
+  constructor(text: string, attachments?: readonly AttachmentSummary[]) {
+    super(text, { queued: true, attachments });
   }
 }
 

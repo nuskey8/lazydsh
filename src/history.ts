@@ -5,11 +5,17 @@ import { eventText, reasoningText } from "./runtime-events.ts";
 import { latestRequestStats } from "./stats.ts";
 import { ToolLog, ToolRow } from "./tools.ts";
 import { ThinkingView } from "./presentation.ts";
+import { attachmentToken, summarizeAttachment, type AttachmentSummary } from "./attachments.ts";
 
 type HistoryRow =
   | ToolRow
   | ThinkingView
-  | { kind: "user" | "assistant" | "metrics" | "notice"; text: string; label?: string };
+  | {
+      kind: "user" | "assistant" | "metrics" | "notice";
+      text: string;
+      label?: string;
+      attachments?: readonly AttachmentSummary[];
+    };
 
 export function historyRows(events: readonly SessionEvent[], sessionId: string): HistoryRow[] {
   const rows: HistoryRow[] = [];
@@ -29,18 +35,21 @@ export function historyRows(events: readonly SessionEvent[], sessionId: string):
     if (event.type === "step/start") started ??= event.time;
     if (event.type === "user/message" && event.data.source?.kind === "user") {
       const text = event.data.content
-        .map((block) =>
-          block.type === "text"
-            ? block.text
-            : block.type === "image"
-              ? "[image]"
-              : block.type === "file"
-                ? "[file]"
-                : "",
-        )
-        .filter(Boolean)
+        .flatMap((block) => (block.type === "text" ? [block.text] : []))
         .join("\n");
-      if (text) rows.push({ kind: "user", text });
+      const attachments = event.data.content
+        .flatMap((block) =>
+          block.type === "image" || block.type === "file" ? [summarizeAttachment(block)] : [],
+        )
+        // New prompts carry Codex-style [Image #N] placeholders in their text;
+        // only older messages need the separate attachment summary row.
+        .filter((attachment, index) => !text.includes(attachmentToken(attachment.kind, index)));
+      if (text || attachments.length)
+        rows.push({
+          kind: "user",
+          text,
+          ...(attachments.length ? { attachments } : {}),
+        });
     }
     if (event.type === "command/run")
       rows.push({ kind: "user", text: "/" + event.data.name + (event.data.args ?? "") });

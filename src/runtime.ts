@@ -40,7 +40,7 @@ import type {} from "@deepseek-ai/dsh-skill";
 import { JobId } from "@deepseek-ai/dsh-jobs";
 import { formatFileMention } from "@deepseek-ai/dsh-file-reference/grammar";
 import { builtinProviders } from "@earendil-works/pi-ai/providers/all";
-import type { AutocompleteItem } from "@earendil-works/pi-tui";
+import type { ReferenceAutocompleteItem } from "./autocomplete.ts";
 import { registerCommands } from "./native-commands.ts";
 import { contentText, isAuthFailure, type RuntimeEvent } from "./runtime-events.ts";
 
@@ -391,7 +391,7 @@ export class Runtime {
     const text = output.chunks.map((chunk) => chunk.text).join("");
     return `${job.label} · ${job.status} · ${job.id}\n${output.lossy || text.length > 12000 ? "[Earlier output omitted]\n" : ""}${text.slice(-12000)}`;
   }
-  async references(query: string, signal: AbortSignal): Promise<AutocompleteItem[]> {
+  async references(query: string, signal: AbortSignal): Promise<ReferenceAutocompleteItem[]> {
     const cwd = await this.cd();
     const [files, skills, children] = await Promise.all([
       query.startsWith("skill:") || query.startsWith("agent:")
@@ -410,6 +410,7 @@ export class Runtime {
                 value,
                 label: "@" + file.path + (file.kind === "directory" ? "/" : ""),
                 description: file.kind,
+                ...(file.kind === "file" ? { path: file.path } : {}),
               },
             ]
           : [];
@@ -1035,7 +1036,8 @@ export class Runtime {
           );
         agent.followup(
           createUserMessage({
-            content: [{ type: "text", text }, ...attachments],
+            // An attachment-only prompt (e.g. a pasted image) carries no text.
+            content: [...(text ? [{ type: "text" as const, text }] : []), ...attachments],
             source: { kind: "user" },
           }),
         );
