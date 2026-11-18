@@ -180,3 +180,41 @@ test("history keeps one Thinking row per assistant step around tool calls", () =
     "metrics",
   ]);
 });
+
+test("resumed prompts keep attachment names instead of placeholders", () => {
+  const events = [
+    {
+      type: "user/message",
+      time: 1000,
+      data: {
+        source: { kind: "user" },
+        content: [
+          { type: "text", text: "Review these" },
+          {
+            type: "image",
+            attachment: {
+              attachmentId: "image-id",
+              mediaType: "image/png",
+              bytes: 128,
+              width: 64,
+              height: 32,
+              name: "shot.png",
+            },
+          },
+          {
+            type: "file",
+            attachment: { attachmentId: "file-id", name: "notes.pdf", bytes: 2048 },
+          },
+        ],
+      },
+    },
+  ] as unknown as SessionEvent[];
+  const row = historyRows(events, "session")[0];
+  assert.ok(row && !(row instanceof ToolRow) && !(row instanceof ThinkingView));
+  assert.equal(row.kind, "user");
+  assert.equal(row.text, "Review these");
+  assert.deepEqual(row.attachments, [
+    { name: "shot.png", kind: "image", detail: "128 B · 64×32" },
+    { name: "notes.pdf", kind: "file", detail: "2 KB" },
+  ]);
+});

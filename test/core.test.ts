@@ -51,7 +51,6 @@ test("running turns allow inspection and settings while rejecting concurrent mes
     "/permission",
     "/effort high",
     "/cd",
-    "/file example.ts",
     "/quit",
   ])
     assert.equal(canRunDuringTurn(command), true, command);

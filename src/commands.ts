@@ -18,11 +18,6 @@ const localCommands: SlashCommand[] = [
     description: "Remove saved credentials",
   },
   {
-    name: "file",
-    argumentHint: "<path> | clear",
-    description: "Attach a file, or clear attachments",
-  },
-  {
     name: "dsh",
     argumentHint: "<command> [args]",
     description: "Run a native dsh command",

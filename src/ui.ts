@@ -3,7 +3,8 @@ import { ApprovalPanel } from "./approval.ts";
 import { historyRows, continuationCommand } from "./history.ts";
 import { openAuthUrl } from "./open-url.ts";
 import { homedir } from "node:os";
-import { sep } from "node:path";
+import { sep, resolve } from "node:path";
+import { existsSync, statSync } from "node:fs";
 import { preferencesPath, saveModel } from "./preferences.ts";
 import { normalizeProvider } from "./provider.ts";
 import { SearchPicker, selectionTheme } from "./picker.ts";
@@ -14,6 +15,13 @@ import { commandMenu } from "./commands.ts";
 import type { RuntimeOptions, QuestionResult } from "./runtime.ts";
 import type { AdmittedPromptContentPart } from "@deepseek-ai/dsh-attachment";
 import { ToolLog, ToolRow } from "./tools.ts";
+import {
+  AttachmentView,
+  attachmentToken,
+  pastedImagePath,
+  summarizeAttachment,
+  type AttachmentSummary,
+} from "./attachments.ts";
 import {
   TuiAltScreen,
   ScrollView,
@@ -54,6 +62,8 @@ import {
 } from "./presentation.ts";
 import { safeText, accent, dim } from "./theme.ts";
 
+type PendingFile = { part: AdmittedPromptContentPart; token: string };
+
 const identity = (text: string) => text;
 const bold = (text: string) => `\x1b[1m${text}\x1b[0m`;
 export const markdownTheme = {
@@ -77,7 +87,7 @@ export const markdownTheme = {
 export function canRunDuringTurn(text: string) {
   return (
     /^\/plan(?:\s+off)?$/.test(text.trim()) ||
-    /^\/(?:status|session|ps|stop|effort|permission|cd|file|quit)(?:\s|$)/.test(text.trim())
+    /^\/(?:status|session|ps|stop|effort|permission|cd|quit)(?:\s|$)/.test(text.trim())
   );
 }
 
@@ -106,8 +116,13 @@ export async function runUI(
   // Prompts typed during a running turn wait below the transcript; drainQueue sends
   // them one at a time as each turn finishes.
   const queueView = new QueueView();
-  const queue: { text: string; view: QueuedMessage }[] = [];
+  const queue: {
+    text: string;
+    view: QueuedMessage;
+    attachments: PendingFile[];
+  }[] = [];
   const composer = new Container();
+  const attachmentView = new AttachmentView();
   const status = new Text("", 2, 1);
   const editor = new PromptEditor(tui, {
     borderColor: editorBorder,
@@ -119,7 +134,8 @@ export async function runUI(
   let resumeDirectory = initial.resumeDirectory;
   let commands = commandMenu();
   let stats: SessionStats | undefined;
-  let pendingFiles: AdmittedPromptContentPart[] = [];
+  let pendingFiles: PendingFile[] = [];
+  let nextAttachmentNumber = 1;
   let thinking: ThinkingView | undefined;
   let thinkingAttempt: string | undefined;
   let busy = false;
@@ -145,6 +161,7 @@ export async function runUI(
   history.addChild(transcript);
   history.addChild(queueView);
   const scroll = new ScrollView(history, { primary: true, follow: "end", scrollbar: "auto" });
+  composer.addChild(attachmentView);
   composer.addChild(editor);
   composer.addChild(status);
   tui.setLayoutRoot(
@@ -157,11 +174,13 @@ export async function runUI(
   setAutocomplete();
 
   function setAutocomplete() {
-    editor.setAutocompleteProvider(
-      new Autocomplete(commands, options.cwd, (query, signal) =>
-        runtime.session ? runtime.references(query, signal) : Promise.resolve([]),
-      ),
+    const provider = new Autocomplete(commands, options.cwd, (query, signal) =>
+      runtime.session ? runtime.references(query, signal) : Promise.resolve([]),
     );
+    // Selecting an image from the "@" picker attaches it instead of inserting
+    // a text reference the model could not read.
+    provider.onAttach = (path) => attachFile(path);
+    editor.setAutocompleteProvider(provider);
   }
 
   async function runBusy(action: () => Promise<unknown>, label = "Error") {
@@ -233,9 +252,14 @@ export async function runUI(
     if (thinking?.running) thinking.finish();
   }
 
-  function add(label: string, text: unknown = "", markdown = false) {
+  function add(
+    label: string,
+    text: unknown = "",
+    markdown = false,
+    attachments: readonly AttachmentSummary[] = [],
+  ) {
     if (label === "You") {
-      transcript.addChild(new SentMessage(String(text)));
+      transcript.addChild(new SentMessage(String(text), { attachments }));
       tui.requestRender();
       return;
     }
@@ -251,6 +275,29 @@ export async function runUI(
     tui.requestRender();
   }
 
+  /** Reflect the pending attachments in the strip above the prompt. */
+  function syncAttachments() {
+    attachmentView.setFiles(
+      pendingFiles.flatMap(({ part, token }) =>
+        part.type === "text" ? [] : [{ ...summarizeAttachment(part), token }],
+      ),
+    );
+    tui.requestRender();
+  }
+
+  /** Admit one path and insert its Codex-style placeholder at the cursor. */
+  function attachFile(path: string) {
+    if (closing || busy || starting || startupFailed) return;
+    void runBusy(async () => {
+      const part = await runtime.attach(path);
+      if (part.type === "text") return;
+      const token = attachmentToken(part.type, nextAttachmentNumber++);
+      pendingFiles.push({ part, token });
+      syncAttachments();
+      editor.insertTextAtCursor(token);
+    }, "Error");
+  }
+
   function clearQueue() {
     const count = queue.length;
     for (const item of queue) queueView.removeChild(item.view);
@@ -259,11 +306,16 @@ export async function runUI(
     return count;
   }
 
-  function enqueue(text: string) {
+  function enqueue(text: string, attachments: PendingFile[] = pendingFiles) {
     editor.addToHistory(text);
     editor.setText("");
+    // The queued message owns the attachments it was submitted with; clear the
+    // composer strip now so later attachments belong to the next message.
+    pendingFiles = pendingFiles.filter((file) => !attachments.includes(file));
+    syncAttachments();
+    // The text already carries [Image #N] / [File #N] placeholders.
     const view = new QueuedMessage(text);
-    queue.push({ text, view });
+    queue.push({ text, view, attachments });
     queueView.addChild(view);
     scroll.scrollToEnd();
     update();
@@ -275,7 +327,7 @@ export async function runUI(
     queueView.removeChild(next.view);
     submittingQueued = true;
     try {
-      editor.onSubmit?.(next.text);
+      void submit(next.text, next.attachments);
     } finally {
       submittingQueued = false;
     }
@@ -474,6 +526,8 @@ export async function runUI(
       setAutocomplete();
       continuationId = id;
       pendingFiles = [];
+      nextAttachmentNumber = 1;
+      syncAttachments();
       toolLog.entries.clear();
       clearQueue();
       if (!connectionOptions.keepTranscript) transcript.clear();
@@ -481,13 +535,10 @@ export async function runUI(
         for (const row of historyRows(await runtime.history(), id)) {
           if (row instanceof ThinkingView || row instanceof ToolRow) transcript.addChild(row);
           else if (row.kind === "metrics") transcript.addChild(new Text(dim(row.text), 2, 1));
+          else if (row.kind === "user") add("You", row.text, false, row.attachments);
           else
             add(
-              row.kind === "user"
-                ? "You"
-                : row.kind === "assistant"
-                  ? "assistant"
-                  : (row.label ?? "dsh"),
+              row.kind === "assistant" ? "assistant" : (row.label ?? "dsh"),
               row.text,
               row.kind === "assistant",
             );
@@ -552,6 +603,7 @@ export async function runUI(
   function dismissPanel() {
     selecting = false;
     composer.clear();
+    composer.addChild(attachmentView);
     composer.addChild(editor);
     composer.addChild(status);
     tui.setFocus(editor);
@@ -774,17 +826,28 @@ export async function runUI(
       });
   }
 
-  editor.onSubmit = async (text: string) => {
+  async function submit(text: string, queuedAttachments?: PendingFile[]) {
     const fromQueue = submittingQueued;
     if (closing) return;
+    const attachments = fromQueue ? (queuedAttachments ?? []) : pendingFiles.slice();
+    // A command line is not a prompt draft, so its attachment tokens do not
+    // apply; ordinary prompts send only attachments whose placeholders remain.
+    const liveAttachments = /^\s*\//.test(text)
+      ? attachments
+      : attachments.filter(({ part, token }) => part.type === "text" || text.includes(token));
+    if (!fromQueue && !/^\s*\//.test(text)) {
+      pendingFiles = pendingFiles.filter((file) => liveAttachments.includes(file));
+      syncAttachments();
+    }
     if (decision) {
       decision(text);
       return;
     }
-    if (!fromQueue && (busy || starting || startupFailed || !text.trim())) return;
+    const hasContent = text.trim().length > 0 || liveAttachments.length > 0;
+    if (!fromQueue && (busy || starting || startupFailed || !hasContent)) return;
     if (running && !canRunDuringTurn(text)) {
-      if (shouldQueueDuringTurn(text)) {
-        enqueue(text);
+      if (shouldQueueDuringTurn(text) || (liveAttachments.length > 0 && !text.trim())) {
+        enqueue(text, liveAttachments);
         return;
       }
       add("Error", "A response is running. Press Esc or Ctrl+C to stop it.");
@@ -1138,28 +1201,17 @@ export async function runUI(
         });
       return;
     }
-    if (/^\/file(?:\s|$)/.test(text)) {
-      const path = text.slice(5).trim();
-      if (!path) {
-        add("File", "Usage: /file <path> · /file clear");
-        return;
-      }
-      if (path === "clear") {
-        pendingFiles = [];
-        add("File", "Attachments cleared.");
-        return;
-      }
-      void runBusy(async () => {
-        pendingFiles.push(await runtime.attach(path));
-        add("Attached", path);
-      }, "Error");
-      return;
-    }
     if (text === "/dsh") {
       add("dsh", "Usage: /dsh <command> [arguments]");
       return;
     }
     if (text.startsWith("/dsh ")) text = "/" + text.slice(5).trimStart().replace(/^\//, "");
+    if (!fromQueue) {
+      // The turn is committed: clear exactly the attachments it carries so a
+      // file attached during the request still belongs to the next message.
+      pendingFiles = pendingFiles.filter((file) => !liveAttachments.includes(file));
+      syncAttachments();
+    }
     const ownsTurn = !running;
     if (ownsTurn) running = true;
     else busy = true;
@@ -1254,10 +1306,9 @@ export async function runUI(
               tui.requestRender();
             } else add("assistant", output.text, true);
           },
-          pendingFiles,
+          liveAttachments.flatMap(({ part }) => (part.type === "text" ? [] : [part])),
         );
         if (result.finishReason === "completed") {
-          pendingFiles = [];
           if (/^\/effort\s+\S/.test(text.trim())) await persistSelection();
         }
         if (result.finalResponse && result.finalResponse !== lastAssistant)
@@ -1294,9 +1345,25 @@ export async function runUI(
         if (!closing) await refreshStats();
       }
     })();
-  };
+  }
+
+  editor.onSubmit = (text) => void submit(text);
 
   tui.addInputListener((data) => {
+    if (!selecting && !decision && !busy && !starting && !startupFailed && !closing) {
+      // Dragging a file into the terminal arrives as bracketed paste text.
+      // Attach image paths instead of dumping the path into the prompt.
+      const dropped = pastedImagePath(data);
+      if (dropped !== undefined) {
+        const path = resolve(options.cwd, dropped);
+        try {
+          if (existsSync(path) && statSync(path).isFile()) {
+            attachFile(path);
+            return { consume: true };
+          }
+        } catch {}
+      }
+    }
     if (matchesKey(data, "ctrl+c")) {
       const action = ctrlCAction({
         draft: editor.getText().length > 0 || pendingFiles.length > 0,
@@ -1306,6 +1373,8 @@ export async function runUI(
       if (action === "clear") {
         editor.setText("");
         pendingFiles = [];
+        nextAttachmentNumber = 1;
+        syncAttachments();
         update();
       } else if (action === "interrupt") cancelTurn();
       else void stop();

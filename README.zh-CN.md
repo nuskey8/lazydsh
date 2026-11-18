@@ -83,9 +83,8 @@ Flags:
 | `/model`      | —                  | 选择供应商和模型                                       |
 | `/login`      | `[provider]`       | 使用 OAuth 或 API 密钥登录供应商                       |
 | `/logout`     | `[provider]`       | 删除已保存的供应商凭据                                 |
-| `/file`       | `<path>            | clear`                                                 | 向下一条消息附加文件/图片，或取消附加 |
 | `/dsh`        | `<command> [args]` | 运行原生的 dsh 命令（即使与 TUI 命令名称冲突时也可以） |
-| `/effort`     | `[level            | default]`                                              | 选择当前模型的推理 effort (思考强度)  |
+| `/effort`     | `[level            | default]`                                              | 选择当前模型的推理 effort (思考强度) |
 | `/new`        | —                  | 保留当前显示并开始新的对话                             |
 | `/rename`     | `[title]`          | 修改当前会话的标题                                     |
 | `/fork`       | —                  | 从已完成的对话轮次中分支新会话                         |
@@ -98,8 +97,8 @@ Flags:
 | `/session`    | —                  | 显示当前的会话 ID                                      |
 | `/status`     | —                  | 显示模型、会话、使用量、账户限额以及配置信息           |
 | `/compact`    | —                  | 总结会话历史以精简上下文                               |
-| `/plan`       | `[off              | message]`                                              | 开始/结束 plan 模式或给出规划指令     |
-| `/goal`       | `[objective        | clear                                                  | edit objective                        | pause | resume]` | 创建、查看、编辑、暂停、恢复或删除目标 |
+| `/plan`       | `[off              | message]`                                              | 开始/结束 plan 模式或给出规划指令    |
+| `/goal`       | `[objective        | clear                                                  | edit objective                       | pause | resume]` | 创建、查看、编辑、暂停、恢复或删除目标 |
 | `/feedback`   | `<text>`           | 针对当前会话向 dsh 记录反馈                            |
 | `/export`     | `[path.zip]`       | 将会话、子会话及附件导出为 ZIP 文件                    |
 | `/quit`       | —                  | 退出 lazydsh                                           |
