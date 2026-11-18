@@ -1,8 +1,10 @@
 import { extractAnsiCode } from "@earendil-works/pi-tui/dist/utils.js";
+import type { TuiMouseDispatchResult } from "@earendil-works/pi-tui/dist/tui.js";
 import { stripVTControlCharacters } from "node:util";
-import { formatDuration, formatTokens } from "./format.ts";
+import { formatDuration } from "./format.ts";
 import { accent, dim, gray, safeText, formatNotification } from "./theme.ts";
 import { formatStats, type SessionStats } from "./stats.ts";
+import { detailText } from "./detail.ts";
 import {
   Editor,
   Input,
@@ -13,6 +15,8 @@ import {
   visibleWidth,
   type Component,
   type TUI,
+  type TuiMouseEvent,
+  type TuiMouseEventResult,
 } from "@earendil-works/pi-tui";
 
 export function activityLine(summary: string) {
@@ -76,23 +80,23 @@ export class StatusPanel extends Text {
   }
 }
 
-export class Transcript extends Container {
-  override addChild(child: Component) {
-    const active = this.children.findIndex((item) => item instanceof ThinkingView && item.running);
-    if (active >= 0) this.children.splice(active, 0, child);
-    else super.addChild(child);
-  }
-
-  override render(width: number): string[] {
-    const lines = renderStack(this.children, width);
-    const blank = (line: string) => !stripVTControlCharacters(line).trim();
-    while (lines.length && blank(lines.at(-1)!)) lines.pop();
-    return lines.length ? [...lines, ""] : [];
-  }
+interface StackRow {
+  component: Component;
+  /** First displayed line of the row in the stack. */
+  start: number;
+  height: number;
+  /** First line of the child's own render that is displayed. */
+  localStart: number;
+  /** The child's complete rendered height, including skipped leading blanks. */
+  total: number;
 }
 
-function renderStack(children: readonly Component[], width: number): string[] {
+function stackRows(
+  children: readonly Component[],
+  width: number,
+): { lines: string[]; rows: StackRow[] } {
   const lines: string[] = [];
+  const rows: StackRow[] = [];
   const blank = (line: string) => !stripVTControlCharacters(line).trim();
   for (const child of children) {
     const next = child.render(width);
@@ -104,9 +108,96 @@ function renderStack(children: readonly Component[], width: number): string[] {
     if (lines.length && blank(lines.at(-1)!)) {
       while (start < next.length && blank(next[start])) start++;
     }
+    const rowStart = lines.length;
     for (let index = start; index < next.length; index++) lines.push(next[index]);
+    const height = next.length - start;
+    if (height > 0)
+      rows.push({
+        component: child,
+        start: rowStart,
+        height,
+        localStart: start,
+        total: next.length,
+      });
   }
-  return lines;
+  return { lines, rows };
+}
+
+function renderStack(children: readonly Component[], width: number): string[] {
+  return stackRows(children, width).lines;
+}
+
+export class Transcript extends Container {
+  private mouseWidth = -1;
+  private mouseRows: StackRow[] = [];
+  override addChild(component: Component) {
+    super.addChild(component);
+    this.mouseRows = [];
+    this.mouseWidth = -1;
+  }
+
+  override removeChild(component: Component) {
+    super.removeChild(component);
+    this.mouseRows = [];
+    this.mouseWidth = -1;
+  }
+
+  override clear() {
+    super.clear();
+    this.mouseRows = [];
+    this.mouseWidth = -1;
+  }
+
+  override invalidate() {
+    super.invalidate();
+    this.mouseRows = [];
+    this.mouseWidth = -1;
+  }
+
+  private layout(width: number): { lines: string[]; rows: StackRow[] } {
+    const { lines, rows } = stackRows(this.children, width);
+    const blank = (line: string) => !stripVTControlCharacters(line).trim();
+    while (lines.length && blank(lines.at(-1)!)) lines.pop();
+    const height = lines.length;
+    const visible = rows
+      .filter((row) => row.start < height)
+      .map((row) => ({
+        ...row,
+        height: Math.min(row.height, height - row.start),
+      }))
+      .filter((row) => row.height > 0);
+    return { lines: lines.length ? [...lines, ""] : [], rows: visible };
+  }
+
+  override render(width: number): string[] {
+    const { lines, rows } = this.layout(width);
+    this.mouseWidth = width;
+    this.mouseRows = rows;
+    return lines;
+  }
+
+  override handleMouse(event: TuiMouseEvent): TuiMouseDispatchResult | undefined {
+    const rows = this.mouseWidth === event.width ? this.mouseRows : this.layout(event.width).rows;
+    const row = rows.find((item) => event.y >= item.start && event.y < item.start + item.height);
+    if (!row) return undefined;
+    const result: TuiMouseEventResult | undefined = row.component.handleMouse?.({
+      ...event,
+      y: event.y - row.start + row.localStart,
+      height: row.total,
+    });
+    if (!result) return undefined;
+    return {
+      ...result,
+      handled: true,
+      target: {
+        component: this,
+        originX: event.screenX - event.x,
+        originY: event.screenY - event.y,
+        width: event.width,
+        height: event.height,
+      },
+    };
+  }
 }
 
 // Pending prompts wait below the transcript until the running turn finishes.
@@ -216,53 +307,136 @@ export class QueuedMessage extends SentMessage {
   }
 }
 
-export class ThinkingView extends Container {
-  private readonly loader: Loader;
+export class ThinkingView implements Component {
+  private readonly staticView: boolean;
+  private readonly loader?: Loader;
+  private readonly preview = new Text("", 2, 0);
   private readonly started = performance.now();
   private ended?: number;
-  private input?: number;
-  private output?: number;
+  private readonly fixedDuration?: number;
   private message = "";
-  private readonly preview = new Text("", 2, 0);
-  constructor(tui: TUI) {
-    super();
-    this.loader = new Loader(tui, accent, dim, "Thinking…");
-    this.loader.setPaddingX(2);
-    this.addChild(this.loader);
+  private reasoning = "";
+  private expanded: boolean;
+  private revision = 0;
+  private cachedWidth = -1;
+  private cachedRevision = -1;
+  private cachedLines?: string[];
+
+  constructor(tui?: TUI, options: { text?: string; expanded?: boolean; duration?: number } = {}) {
+    this.staticView = tui === undefined;
+    this.expanded = options.expanded ?? false;
+    this.fixedDuration = options.duration;
+    if (tui) {
+      this.loader = new Loader(tui, accent, dim, "Thinking…");
+      this.loader.setPaddingX(2);
+    }
+    if (options.text) this.reasoning = options.text;
+    if (this.staticView) this.ended = performance.now();
   }
+
   get running() {
     return this.ended === undefined;
   }
-  setTokens(input: number, output: number) {
-    this.input = input;
-    this.output = output;
+  get hasReasoning() {
+    return this.reasoning.trim().length > 0;
   }
-  private metrics() {
+  get isExpanded() {
+    return this.expanded;
+  }
+
+  appendReasoning(text: string) {
+    if (!text) return;
+    this.reasoning += text;
+    this.touch();
+  }
+  setReasoning(text: string) {
+    if (text === this.reasoning) return;
+    this.reasoning = text;
+    this.touch();
+  }
+  private touch() {
+    this.revision++;
+    this.cachedLines = undefined;
+    this.cachedRevision = -1;
+    this.cachedWidth = -1;
+  }
+
+  private duration() {
+    if (this.fixedDuration !== undefined) return formatDuration(this.fixedDuration);
     const seconds = Math.floor(((this.ended ?? performance.now()) - this.started) / 1000);
-    const tokens =
-      this.input === undefined || this.output === undefined
-        ? ""
-        : ` (↑${formatTokens(this.input)} ↓${formatTokens(this.output)})`;
-    return `${formatDuration(seconds)}${tokens}`;
+    return formatDuration(seconds);
   }
-  override render(width: number): string[] {
-    if (this.ended === undefined) {
-      const message = this.metrics().replace(/^([^(]+?)(?= \(↑|$)/, "Thinking ($1)");
-      if (message !== this.message) {
-        this.message = message;
-        this.loader.setMessage(message);
+
+  private headerText() {
+    if (this.staticView) {
+      return this.fixedDuration === undefined ? "✓ Thinking" : `✓ Thinking (${this.duration()})`;
+    }
+    const label = `Thinking (${this.duration()})`;
+    return this.running ? label : `✓ ${label}`;
+  }
+
+  toggle() {
+    if (!this.hasReasoning) return false;
+    this.expanded = !this.expanded;
+    this.touch();
+    return true;
+  }
+
+  handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+    if (event.button !== "left" || event.y !== 0 || !this.hasReasoning) return undefined;
+    if (event.type === "press") return { handled: true, capture: true };
+    if (event.type === "click") {
+      this.toggle();
+      return { handled: true, render: true };
+    }
+    if (event.type === "release") return { handled: true };
+    return undefined;
+  }
+
+  invalidate() {
+    this.loader?.invalidate();
+    this.preview.invalidate();
+    this.cachedLines = undefined;
+    this.cachedRevision = -1;
+    this.cachedWidth = -1;
+  }
+
+  render(width: number): string[] {
+    if (
+      !this.running &&
+      this.cachedLines &&
+      this.cachedWidth === width &&
+      this.cachedRevision === this.revision
+    )
+      return this.cachedLines;
+    const header = this.headerText();
+    let lines: string[];
+    if (this.running && this.loader) {
+      if (header !== this.message) {
+        this.message = header;
+        this.loader.setMessage(header);
       }
-    } else this.preview.setText(dim(this.metrics()));
-    const lines = super.render(width);
-    return lines[0] === "" ? lines.slice(1) : lines;
+      lines = this.loader.render(width);
+      if (lines[0] === "") lines = lines.slice(1);
+    } else {
+      this.preview.setText(activityLine(header));
+      lines = this.preview.render(width);
+    }
+    if (this.expanded && this.hasReasoning)
+      lines = [...lines, ...detailText(this.reasoning, width, dim)];
+    if (!this.running) {
+      this.cachedWidth = width;
+      this.cachedRevision = this.revision;
+      this.cachedLines = lines;
+    }
+    return lines;
   }
+
   finish() {
-    this.ended ??= performance.now();
-    this.loader.stop();
-    this.removeChild(this.loader);
-    this.removeChild(this.preview);
-    this.preview.setText(dim(this.metrics()));
-    this.addChild(this.preview);
+    if (this.ended !== undefined) return;
+    this.ended = performance.now();
+    this.loader?.stop();
+    this.touch();
   }
 }
 

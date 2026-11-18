@@ -1,12 +1,17 @@
-import { truncateToWidth, type Component } from "@earendil-works/pi-tui";
+import {
+  truncateToWidth,
+  type Component,
+  type TuiMouseEvent,
+  type TuiMouseEventResult,
+} from "@earendil-works/pi-tui";
 import { activityLine } from "./presentation.ts";
 import { safeText } from "./theme.ts";
+import { toolDetails } from "./detail.ts";
 import type { eventText } from "./runtime-events.ts";
 
 type ToolOutput = Exclude<NonNullable<ReturnType<typeof eventText>>, { kind: "assistant" }>;
 interface ToolEntry {
   row: ToolRow;
-  label: string;
 }
 
 function target(argumentsText: string): string {
@@ -24,29 +29,106 @@ function target(argumentsText: string): string {
   return "";
 }
 
+function baseLabel(summary: string) {
+  const match = /^([·✓✗])\s+([\s\S]*)$/.exec(summary);
+  const body = match?.[2] ?? summary;
+  const suffixAt = body.indexOf(" — ");
+  return suffixAt >= 0 ? body.slice(0, suffixAt) : body;
+}
+
 export class ToolRow implements Component {
   private value: string;
+  private label: string;
+  private argumentsText?: string;
+  private resultText?: string;
+  private resultMeta?: unknown;
+  private expanded = false;
+  private revision = 0;
   private cachedWidth = -1;
+  private cachedRevision = -1;
   private cachedLines?: string[];
+
   constructor(summary: string) {
     this.value = summary;
+    this.label = baseLabel(summary);
   }
+
   get summary() {
     return this.value;
   }
+  get isExpanded() {
+    return this.expanded;
+  }
+  private get hasDetails() {
+    return (
+      this.argumentsText !== undefined ||
+      this.resultText !== undefined ||
+      this.resultMeta !== undefined
+    );
+  }
+
+  private touch() {
+    this.revision++;
+    this.cachedLines = undefined;
+    this.cachedRevision = -1;
+    this.cachedWidth = -1;
+  }
+
   setSummary(summary: string) {
     if (summary === this.value) return;
     this.value = summary;
-    this.invalidate();
+    this.touch();
   }
+
+  /** Keep the raw call so the collapsed row can expand without re-reading the log. */
+  setCall(argumentsText: string) {
+    this.argumentsText = argumentsText;
+    this.touch();
+  }
+
+  finish(status: "ok" | "error", text: string, reason?: string, meta?: unknown) {
+    this.resultText = text;
+    this.resultMeta = meta;
+    const detail = reason || text || "Tool failed";
+    const suffix = status === "error" ? ` — ${safeText(detail).split("\n")[0]}` : "";
+    this.setSummary(`${status === "error" ? "✗" : "✓"} ${this.label}${suffix}`);
+    this.touch();
+  }
+
+  toggle() {
+    if (!this.hasDetails) return false;
+    this.expanded = !this.expanded;
+    this.touch();
+    return true;
+  }
+
+  handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+    if (event.button !== "left" || event.y !== 0 || !this.hasDetails) return undefined;
+    if (event.type === "press") return { handled: true, capture: true };
+    if (event.type === "click") {
+      this.toggle();
+      return { handled: true, render: true };
+    }
+    if (event.type === "release") return { handled: true };
+    return undefined;
+  }
+
   invalidate() {
-    this.cachedWidth = -1;
     this.cachedLines = undefined;
+    this.cachedRevision = -1;
+    this.cachedWidth = -1;
   }
+
   render(width: number): string[] {
-    if (this.cachedLines && this.cachedWidth === width) return this.cachedLines;
-    const lines = [truncateToWidth(`  ${activityLine(this.value)}`, width)];
+    if (this.cachedLines && this.cachedWidth === width && this.cachedRevision === this.revision)
+      return this.cachedLines;
+    const lines = [truncateToWidth(`  ${activityLine(this.value)}`, Math.max(1, width))];
+    if (this.expanded && this.hasDetails)
+      lines.push(
+        ...toolDetails(this.argumentsText, this.resultText, this.resultMeta, Math.max(1, width)),
+      );
     this.cachedWidth = width;
+    this.cachedRevision = this.revision;
     this.cachedLines = lines;
     return lines;
   }
@@ -62,15 +144,17 @@ export class ToolLog {
       const preview = output.kind === "tool" ? target(output.text) : "";
       const label =
         output.kind === "tool" ? `${safeText(output.name)}${preview ? ` ${preview}` : ""}` : "tool";
-      entry = { row: new ToolRow(`· ${label}`), label };
+      entry = { row: new ToolRow(`· ${label}`) };
       this.entries.set(key, entry);
     }
-    if (output.kind !== "tool") {
-      const suffix =
-        output.kind === "error"
-          ? ` — ${safeText(output.reason || output.text || "Tool failed").split("\n")[0]}`
-          : "";
-      entry.row.setSummary(`${output.kind === "error" ? "✗" : "✓"} ${entry.label}${suffix}`);
+    if (output.kind === "tool") entry.row.setCall(output.text);
+    else {
+      entry.row.finish(
+        output.kind === "error" ? "error" : "ok",
+        output.text,
+        output.reason,
+        output.meta,
+      );
       this.entries.delete(key);
     }
     return created ? entry.row : undefined;

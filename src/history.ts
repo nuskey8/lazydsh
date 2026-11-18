@@ -1,12 +1,14 @@
 import { formatDuration, formatTokens } from "./format.ts";
 import { accent, dim } from "./theme.ts";
 import type { SessionEvent } from "@deepseek-ai/dsh-session";
-import { eventText } from "./runtime-events.ts";
+import { eventText, reasoningText } from "./runtime-events.ts";
 import { latestRequestStats } from "./stats.ts";
 import { ToolLog, ToolRow } from "./tools.ts";
+import { ThinkingView } from "./presentation.ts";
 
 type HistoryRow =
   | ToolRow
+  | ThinkingView
   | { kind: "user" | "assistant" | "metrics" | "notice"; text: string; label?: string };
 
 export function historyRows(events: readonly SessionEvent[], sessionId: string): HistoryRow[] {
@@ -55,6 +57,17 @@ export function historyRows(events: readonly SessionEvent[], sessionId: string):
         input += usage.inputTokens + (usage.cacheReadTokens ?? 0) + (usage.cacheWriteTokens ?? 0);
         output += usage.outputTokens;
       }
+    }
+    if (event.type === "assistant/message") {
+      const reasoning = reasoningText(event.data.message.content);
+      if (reasoning.trim())
+        rows.push(
+          new ThinkingView(undefined, {
+            text: reasoning,
+            duration:
+              started === undefined ? undefined : Math.max(0, (event.time - started) / 1000),
+          }),
+        );
     }
     const item = eventText({ method: "session.event", params: { sessionId, event } });
     if (item?.kind === "assistant") {

@@ -1,7 +1,14 @@
 import { ToolRow } from "../src/tools.ts";
 import { test, vi } from "vite-plus/test";
 import assert from "node:assert/strict";
-import { ProcessTerminal, TuiMainScreen, Text, visibleWidth } from "@earendil-works/pi-tui";
+import {
+  Container,
+  ProcessTerminal,
+  TuiMainScreen,
+  Text,
+  visibleWidth,
+  type TuiMouseEvent,
+} from "@earendil-works/pi-tui";
 import { stripVTControlCharacters } from "node:util";
 import {
   StartupBanner,
@@ -142,7 +149,7 @@ test("queued prompts stack below the transcript with one blank row between", () 
   );
 });
 
-test("Thinking shows elapsed time and usage, then only frozen metrics", () => {
+test("Thinking shows elapsed seconds and freezes them on finish", () => {
   const now = vi.spyOn(performance, "now").mockReturnValue(1000);
   const tui = new TuiMainScreen(new ProcessTerminal());
   tui.requestRender = () => {};
@@ -151,23 +158,13 @@ test("Thinking shows elapsed time and usage, then only frozen metrics", () => {
     now.mockReturnValue(2400);
     assert.match(view.render(80).map(stripVTControlCharacters).join("\n"), /Thinking \(1s\)/);
     assert.doesNotMatch(view.render(80).map(stripVTControlCharacters).join("\n"), /↑|↓/);
-    view.setTokens(2, 13);
-    assert.match(
-      view.render(80).map(stripVTControlCharacters).join("\n"),
-      /Thinking \(1s\) \(↑2 ↓13\)/,
-    );
-    view.setTokens(1200, 3200000);
-    assert.match(
-      view.render(80).map(stripVTControlCharacters).join("\n"),
-      /Thinking \(1s\) \(↑1.2K ↓3.2M\)/,
-    );
     now.mockReturnValue(4000);
     view.finish();
     now.mockReturnValue(9000);
     view.finish();
     assert.deepEqual(
       view.render(80).map((line) => stripVTControlCharacters(line).trimEnd()),
-      ["  3s (↑1.2K ↓3.2M)"],
+      ["  ✓ Thinking (3s)"],
     );
   } finally {
     view.finish();
@@ -236,7 +233,7 @@ test("authentication input never renders its secret", () => {
   assert.equal(input.getValue(), "private-api-key");
 });
 
-test("active Thinking remains below new tools, answers and notifications", () => {
+test("Thinking keeps its place above later tools, answers and notifications", () => {
   const tui = new TuiMainScreen(new ProcessTerminal());
   tui.requestRender = () => {};
   const transcript = new Transcript();
@@ -247,15 +244,17 @@ test("active Thinking remains below new tools, answers and notifications", () =>
     transcript.addChild(new Text("answer", 2, 1));
     transcript.addChild(new Notification("Model", "provider / model"));
     const lines = transcript.render(80).map(stripVTControlCharacters);
-    assert.match(lines.at(-2)!, /Thinking/);
+    const thought = lines.findIndex((line) => /Thinking/.test(line));
+    const tool = lines.findIndex((line) => /read file/.test(line));
+    assert.ok(thought >= 0 && thought < tool);
     assert.equal(lines.at(-1), "");
     assert.deepEqual(
-      transcript.children.slice(0, 3).map((item) => item.constructor.name),
-      ["ToolRow", "Text", "Notification"],
+      transcript.children.map((item) => item.constructor.name),
+      ["ThinkingView", "ToolRow", "Text", "Notification"],
     );
     thinking.finish();
     transcript.addChild(new SentMessage("next message"));
-    assert.equal(transcript.children.at(-2), thinking);
+    assert.equal(transcript.children.at(0), thinking);
     assert.ok(transcript.children.at(-1) instanceof SentMessage);
   } finally {
     thinking.finish();
@@ -276,7 +275,7 @@ test("tools and Thinking have exactly one blank row; unknown tokens stay hidden 
     assert.match(lines[index - 2], /read file/);
     thinking.finish();
     lines = transcript.render(80).map((line) => stripVTControlCharacters(line).trimEnd());
-    assert.match(lines.at(-2)!, /^  \d+s$/);
+    assert.match(lines.at(-2)!, /^  ✓ Thinking \(\d+s\)$/);
     assert.equal(lines.at(-3), "");
     assert.doesNotMatch(lines.join("\n"), /↑|↓/);
   } finally {
@@ -337,4 +336,104 @@ test("the transcript never mutates a child's cached line array", () => {
   assert.deepEqual(cached, ["", "hello ", ""]);
   assert.deepEqual(first, second);
   assert.equal(first.filter((line) => line.includes("hello")).length, 1);
+});
+
+function mouse(type: TuiMouseEvent["type"], y = 0, width = 80): TuiMouseEvent {
+  return {
+    type,
+    button: "left",
+    x: 0,
+    y,
+    screenX: 0,
+    screenY: y,
+    width,
+    height: 24,
+    shift: false,
+    alt: false,
+    ctrl: false,
+  };
+}
+
+test("reasoning is collapsed by default and expands on a header click", () => {
+  const view = new ThinkingView(undefined, { text: "first thought\nsecond thought" });
+  assert.equal(view.hasReasoning, true);
+  assert.equal(view.render(80).length, 1);
+  const header = stripVTControlCharacters(view.render(80)[0]!).trimEnd();
+  assert.equal(header, "  ✓ Thinking");
+  assert.doesNotMatch(
+    view.render(80).map(stripVTControlCharacters).join("\n"),
+    /first thought|[▸▾]/,
+  );
+
+  assert.deepEqual(view.handleMouse(mouse("press")), { handled: true, capture: true });
+  assert.deepEqual(view.handleMouse(mouse("click")), { handled: true, render: true });
+  const lines = view.render(80).map(stripVTControlCharacters);
+  assert.equal(lines[0]!.trimEnd(), header);
+  assert.equal(lines[1]!.indexOf("│"), lines[0]!.indexOf("✓"));
+  assert.doesNotMatch(lines.join("\n"), /[▸▾]/);
+  assert.match(lines.join("\n"), /first thought\n\s+│ second thought/);
+  assert.ok(lines.slice(1).every((line) => line.startsWith("  │")));
+  for (const width of [20, 48, 80])
+    assert.ok(view.render(width).every((line) => visibleWidth(line) <= width));
+
+  view.handleMouse(mouse("click"));
+  assert.equal(view.render(80).length, 1);
+  assert.equal(view.handleMouse(mouse("click", 1)), undefined);
+});
+
+test("transcript routes a header click to the row under the pointer", () => {
+  const transcript = new Transcript();
+  transcript.addChild(new Text("hello", 0, 0));
+  const row = new ToolRow("✓ read main.ts");
+  row.setCall('{"path":"main.ts"}');
+  transcript.addChild(row);
+  transcript.render(80);
+
+  const history = new Container();
+  history.addChild(transcript);
+  history.render(80);
+  const result = history.handleMouse(mouse("click", 1));
+  assert.equal(result?.handled, true);
+  assert.equal(row.isExpanded, true);
+  assert.ok(row.render(80).length > 1);
+
+  history.render(80);
+  assert.equal(history.handleMouse(mouse("click", 2)), undefined);
+  assert.equal(row.isExpanded, true);
+});
+
+test("successive Thinking blocks settle between the tools of each step", () => {
+  const tui = new TuiMainScreen(new ProcessTerminal());
+  tui.requestRender = () => {};
+  const transcript = new Transcript();
+  const first = new ThinkingView(tui);
+  const read = new ToolRow("✓ read a.ts");
+  const glob = new ToolRow("✓ glob **/*.ts");
+  const second = new ThinkingView(tui);
+  try {
+    transcript.addChild(first);
+    transcript.addChild(read);
+    transcript.addChild(glob);
+    assert.deepEqual(
+      transcript.children.map((item) => item.constructor.name),
+      ["ThinkingView", "ToolRow", "ToolRow"],
+    );
+    first.finish();
+
+    transcript.addChild(second);
+    assert.deepEqual(
+      transcript.children.map((item) => item.constructor.name),
+      ["ThinkingView", "ToolRow", "ToolRow", "ThinkingView"],
+    );
+    second.finish();
+    assert.deepEqual(
+      transcript.children.map((item) => item.constructor.name),
+      ["ThinkingView", "ToolRow", "ToolRow", "ThinkingView"],
+    );
+    assert.equal(transcript.children[0], first);
+    assert.equal(transcript.children[3], second);
+  } finally {
+    first.finish();
+    second.finish();
+  }
 });

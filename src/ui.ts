@@ -25,7 +25,7 @@ import {
   matchesKey,
   type Component,
 } from "@earendil-works/pi-tui";
-import { eventText, isAuthFailure } from "./runtime-events.ts";
+import { eventText, isAuthFailure, reasoningText } from "./runtime-events.ts";
 import { AuthorizationDeclinedError } from "@deepseek-ai/dsh-authorization";
 import type { Runtime, Route, Callbacks, CredentialSource } from "./runtime.ts";
 import {
@@ -35,6 +35,7 @@ import {
 } from "./resume-directory.ts";
 import { StreamingMarkdown } from "./streaming.ts";
 import { captureConsole } from "./tui-console.ts";
+import { formatDuration, formatTokens } from "./format.ts";
 import { dshCachePath } from "@deepseek-ai/dsh-home-paths";
 
 import {
@@ -119,6 +120,7 @@ export async function runUI(
   let stats: SessionStats | undefined;
   let pendingFiles: AdmittedPromptContentPart[] = [];
   let thinking: ThinkingView | undefined;
+  let thinkingAttempt: string | undefined;
   let busy = false;
   let starting = false;
   let startupFailed = false;
@@ -207,6 +209,27 @@ export async function runUI(
         update();
       }
     }
+  }
+
+  function settleThinking() {
+    if (!thinking) return;
+    thinking.finish();
+    thinking = undefined;
+    thinkingAttempt = undefined;
+  }
+
+  function beginThinking(attemptId: string) {
+    if (thinking && thinkingAttempt === attemptId) return thinking;
+    if (thinking) settleThinking();
+    thinking = new ThinkingView(tui);
+    thinkingAttempt = attemptId;
+    transcript.addChild(thinking);
+    return thinking;
+  }
+
+  /** The model has started speaking: reasoning is done even if the stream end is still pending. */
+  function completeThinking() {
+    if (thinking?.running) thinking.finish();
   }
 
   function add(label: string, text: unknown = "", markdown = false) {
@@ -449,7 +472,7 @@ export async function runUI(
       transcript.clear();
       if (sessionId) {
         for (const row of historyRows(await runtime.history(), id)) {
-          if (row instanceof ToolRow) transcript.addChild(row);
+          if (row instanceof ThinkingView || row instanceof ToolRow) transcript.addChild(row);
           else if (row.kind === "metrics") transcript.addChild(new Text(dim(row.text), 2, 1));
           else
             add(
@@ -1089,7 +1112,9 @@ export async function runUI(
     void (async () => {
       let lastAssistant: string | undefined;
       let liveAnswer: StreamingMarkdown | undefined;
-      const usage = new Map<string, { input: number; output: number }>();
+      const attemptUsage = new Map<string, { input: number; output: number }>();
+      const startedAt = performance.now();
+      let sawModelAttempt = false;
       try {
         const result = await runtime.run(
           text,
@@ -1100,28 +1125,31 @@ export async function runUI(
               notification.params.sessionId === runtime.session?.id
             ) {
               const frame = notification.params;
-              if (frame.type === "start" && !thinking) {
-                thinking = new ThinkingView(tui);
-                transcript.addChild(thinking);
-              }
-              if (frame.type === "usage" && thinking) {
+              if (frame.type === "start") {
+                sawModelAttempt = true;
+                beginThinking(frame.attemptId);
+              } else if (frame.type === "end") {
+                if (thinking && thinkingAttempt === frame.attemptId) settleThinking();
+              } else if (frame.type === "usage") {
                 const tokens = frame.usage;
-                usage.set(frame.attemptId, {
+                attemptUsage.set(frame.attemptId, {
                   input:
                     tokens.inputTokens +
                     (tokens.cacheReadTokens ?? 0) +
                     (tokens.cacheWriteTokens ?? 0),
                   output: tokens.outputTokens,
                 });
-                const totals = [...usage.values()].reduce(
-                  (sum, item) => ({
-                    input: sum.input + item.input,
-                    output: sum.output + item.output,
-                  }),
-                  { input: 0, output: 0 },
-                );
-                thinking.setTokens(totals.input, totals.output);
               }
+              tui.requestRender();
+              return;
+            }
+            if (
+              notification.method === "assistant.reasoning" &&
+              notification.params.sessionId === runtime.session?.id
+            ) {
+              beginThinking(notification.params.attemptId).appendReasoning(
+                notification.params.text,
+              );
               tui.requestRender();
               return;
             }
@@ -1129,6 +1157,7 @@ export async function runUI(
               notification.method === "assistant.delta" &&
               notification.params.sessionId === runtime.session?.id
             ) {
+              completeThinking();
               if (!liveAnswer || !transcript.children.includes(liveAnswer)) {
                 liveAnswer = new StreamingMarkdown(markdownTheme);
                 transcript.addChild(liveAnswer);
@@ -1145,6 +1174,12 @@ export async function runUI(
               if (event.type === "assistant/attempt" && liveAnswer) {
                 transcript.removeChild(liveAnswer);
                 liveAnswer = undefined;
+              }
+              if (event.type === "assistant/message") {
+                completeThinking();
+                const reasoning = reasoningText(event.data.message.content);
+                if (reasoning.trim() && thinking && !thinking.hasReasoning)
+                  thinking.setReasoning(reasoning);
               }
             }
             const output = eventText(notification);
@@ -1177,12 +1212,26 @@ export async function runUI(
         if (!closing) add("Error", error instanceof Error ? error.message : String(error));
       } finally {
         if (ownsTurn) {
-          if (thinking) {
-            thinking.finish();
-            transcript.removeChild(thinking);
-            transcript.addChild(thinking);
+          settleThinking();
+          if (sawModelAttempt && !closing) {
+            const totals = [...attemptUsage.values()].reduce(
+              (sum, item) => ({
+                input: sum.input + item.input,
+                output: sum.output + item.output,
+              }),
+              { input: 0, output: 0 },
+            );
+            const tokens = attemptUsage.size
+              ? ` (↑${formatTokens(totals.input)} ↓${formatTokens(totals.output)})`
+              : "";
+            transcript.addChild(
+              new Text(
+                dim(`${formatDuration((performance.now() - startedAt) / 1000)}${tokens}`),
+                2,
+                1,
+              ),
+            );
           }
-          thinking = undefined;
           running = false;
         } else busy = false;
         tui.requestRender();

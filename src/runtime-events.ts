@@ -8,6 +8,10 @@ export type RuntimeEvent =
       params: { sessionId: string; attemptId: string; text: string; index: number };
     }
   | {
+      method: "assistant.reasoning";
+      params: { sessionId: string; attemptId: string; text: string; index: number };
+    }
+  | {
       method: "lazydsh.thinking";
       params: { sessionId: string; attemptId: string } & (
         | { type: "start" | "end" }
@@ -56,6 +60,7 @@ export function eventText(notification: RuntimeEvent) {
       callId: event.data.message.toolCallId,
       text: contentText(event.data.message.content),
       reason: event.data.error?.reason,
+      meta: event.data.meta,
     } as const;
   }
 }
@@ -65,4 +70,12 @@ export function contentText(content: readonly ContentBlock[]) {
     .filter((block) => block.type === "text")
     .map((block) => block.text)
     .join("\n");
+}
+
+/** The model's visible reasoning blocks, joined for a collapsed thinking row. */
+export function reasoningText(content: readonly ContentBlock[]) {
+  return content
+    .filter((block) => block.type === "reasoning")
+    .map((block) => block.text)
+    .join("\n\n");
 }
