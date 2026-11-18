@@ -154,11 +154,11 @@ function wrappedPrefix(
 }
 
 /** One unified-diff block per applied hunk, colored and wrapped. */
-export function detailDiff(diffs: readonly FileDiff[], width: number): string[] {
+export function detailDiff(diffs: readonly FileDiff[], width: number, showLabels = true): string[] {
   const lines: string[] = [];
   let currentPath: string | undefined;
   for (const diff of diffs) {
-    if (diff.path !== currentPath) {
+    if (showLabels && diff.path !== currentPath) {
       lines.push(...detailLabel(`Diff ${diff.path}`, width));
       currentPath = diff.path;
     }

@@ -12,6 +12,7 @@ import type { eventText } from "./runtime-events.ts";
 type ToolOutput = Exclude<NonNullable<ReturnType<typeof eventText>>, { kind: "assistant" }>;
 interface ToolEntry {
   row: ToolRow;
+  callId: string;
 }
 
 function target(argumentsText: string): string {
@@ -58,6 +59,10 @@ export class ToolRow implements Component {
   }
   get isExpanded() {
     return this.expanded;
+  }
+  /** Raw call JSON, so an approval prompt can show what is about to run. */
+  get callArguments() {
+    return this.argumentsText;
   }
   private get hasDetails() {
     return (
@@ -136,6 +141,16 @@ export class ToolRow implements Component {
 
 export class ToolLog {
   readonly entries = new Map<string, ToolEntry>();
+  /**
+   * The pending call behind an approval prompt. Approval requests carry only a
+   * call ID, and call IDs are unique across the session and its children, so a
+   * scan by ID finds the row even when the request comes from a child agent.
+   */
+  find(callId: string | undefined): ToolRow | undefined {
+    if (!callId) return undefined;
+    for (const entry of this.entries.values()) if (entry.callId === callId) return entry.row;
+    return undefined;
+  }
   record(output: ToolOutput): ToolRow | undefined {
     const key = JSON.stringify([output.sessionId, output.callId]);
     let entry = this.entries.get(key);
@@ -144,7 +159,7 @@ export class ToolLog {
       const preview = output.kind === "tool" ? target(output.text) : "";
       const label =
         output.kind === "tool" ? `${safeText(output.name)}${preview ? ` ${preview}` : ""}` : "tool";
-      entry = { row: new ToolRow(`· ${label}`) };
+      entry = { row: new ToolRow(`· ${label}`), callId: output.callId };
       this.entries.set(key, entry);
     }
     if (output.kind === "tool") entry.row.setCall(output.text);
