@@ -76,7 +76,7 @@ export const markdownTheme = {
 export function canRunDuringTurn(text: string) {
   return (
     /^\/plan(?:\s+off)?$/.test(text.trim()) ||
-    /^\/(?:status|session|ps|stop|effort|permission|cd|file|clear|quit)(?:\s|$)/.test(text.trim())
+    /^\/(?:status|session|ps|stop|effort|permission|cd|file|quit)(?:\s|$)/.test(text.trim())
   );
 }
 
@@ -447,6 +447,7 @@ export async function runUI(
     notifyModel = false,
     startup = false,
     directory?: string,
+    connectionOptions: { keepTranscript?: boolean } = {},
   ) {
     pendingStartupConnection = undefined;
     busy = true;
@@ -469,7 +470,7 @@ export async function runUI(
       pendingFiles = [];
       toolLog.entries.clear();
       clearQueue();
-      transcript.clear();
+      if (!connectionOptions.keepTranscript) transcript.clear();
       if (sessionId) {
         for (const row of historyRows(await runtime.history(), id)) {
           if (row instanceof ThinkingView || row instanceof ToolRow) transcript.addChild(row);
@@ -513,6 +514,33 @@ export async function runUI(
       busy = false;
       if (!closing) update();
     }
+  }
+
+  // Codex-compatible chat lifecycle: both commands start a new session, but
+  // /new keeps the previous transcript visible while /clear wipes it first.
+  async function startNewConversation(clearScreen: boolean) {
+    if (clearScreen) {
+      transcript.clear();
+      scroll.scrollToEnd();
+      tui.resetTextSelection();
+      update();
+    }
+    if (!route.model) {
+      void pickModel();
+      return;
+    }
+    await connect(
+      { provider: route.provider, model: route.model },
+      undefined,
+      false,
+      false,
+      undefined,
+      { keepTranscript: true },
+    );
+    if (closing || !runtime.session) return;
+    add("New conversation", runtime.session.id);
+    scroll.scrollToEnd();
+    update();
   }
 
   function dismissPanel() {
@@ -777,11 +805,7 @@ export async function runUI(
     }
     add("You", text);
     if (text === "/clear") {
-      transcript.clear();
-      if (thinking?.running) transcript.addChild(thinking);
-      scroll.scrollToEnd();
-      tui.resetTextSelection();
-      update();
+      void startNewConversation(true);
       return;
     }
     if (text === "/quit") {
@@ -793,8 +817,7 @@ export async function runUI(
       return;
     }
     if (text === "/new") {
-      if (route.model) void connect({ provider: route.provider, model: route.model });
-      else void pickModel();
+      void startNewConversation(false);
       return;
     }
     const authCommand = /^\/(login|logout)(?:\s+(.*))?$/.exec(text);
