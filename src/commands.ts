@@ -2,7 +2,7 @@ import type { SlashCommand } from "@earendil-works/pi-tui";
 import type { CommandDescriptor } from "@deepseek-ai/dsh-commands/types";
 
 const localCommands: SlashCommand[] = [
-  { name: "clear", description: "Clear the chat" },
+  { name: "clear", description: "Clear the terminal and start a new chat" },
   { name: "resume", description: "Resume a saved conversation" },
   { name: "cd", description: "Change the working directory" },
   { name: "permission", description: "Show or choose a permission preset" },
@@ -32,7 +32,7 @@ const localCommands: SlashCommand[] = [
     argumentHint: "[level | default]",
     description: "Choose reasoning effort",
   },
-  { name: "new", description: "Start a new conversation" },
+  { name: "new", description: "Start a new chat during a conversation" },
   { name: "rename", argumentHint: "[title]", description: "Rename this conversation" },
   { name: "fork", description: "Fork from a completed turn" },
   { name: "archive", description: "Archive a conversation" },

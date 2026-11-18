@@ -75,7 +75,7 @@ Flags:
 
 | Command       | Arguments          | Description                                                            |
 | ------------- | ------------------ | ---------------------------------------------------------------------- |
-| `/clear`      | —                  | Clear screen while keeping the session                                 |
+| `/clear`      | —                  | Clear the terminal and start a new conversation                        |
 | `/resume`     | —                  | Select and resume a session                                            |
 | `/cd`         | —                  | Choose the working directory for the session                           |
 | `/permission` | `[preset]`         | View and select dsh permission presets                                 |
@@ -85,7 +85,7 @@ Flags:
 | `/file`       | `<path>            | clear`                                                                 | Attach a file/image to the next message or clear attachments |
 | `/dsh`        | `<command> [args]` | Run native dsh commands (even if they conflict with TUI command names) |
 | `/effort`     | `[level            | default]`                                                              | Select the reasoning effort for the current model            |
-| `/new`        | —                  | Start a new conversation with the current model                        |
+| `/new`        | —                  | Start a new conversation while keeping the current display             |
 | `/rename`     | `[title]`          | Rename the current session title                                       |
 | `/fork`       | —                  | Fork the session from a completed turn                                 |
 | `/archive`    | —                  | Select and archive a session                                           |
