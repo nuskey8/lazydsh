@@ -87,7 +87,7 @@
     "@deepseek-ai/dsh-user-questions": "0.2.2-rc.5",
     "@deepseek-ai/dsh-working-directory": "0.2.2-rc.5",
     "@deepseek-ai/dsh-workspace": "0.2.2-rc.5",
-    "@earendil-works/pi-ai": "1.5.2",
+    "@earendil-works/pi-ai": "1.6.0",
     "@earendil-works/pi-tui": "1.5.2",
     "highlight.js": "11.12.0",
     "open": "11.0.4",
