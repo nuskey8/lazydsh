@@ -2,7 +2,12 @@ import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { validateRoute } from "../src/catalog.ts";
 import { isAuthFailure } from "../src/runtime-events.ts";
-import { canRunDuringTurn, shouldQueueDuringTurn } from "../src/ui.ts";
+import {
+  canRunDuringTurn,
+  notificationChannel,
+  shouldQueueDuringTurn,
+  turnNotification,
+} from "../src/ui.ts";
 import { formatNotification, safeText } from "../src/theme.ts";
 
 test("route validation allows configured providers and rejects missing models", () => {
@@ -85,4 +90,34 @@ test("plain prompts typed during a running turn are queued while commands stay i
 test("notifications without a message show only the label", () => {
   assert.equal(formatNotification("Interrupted", "", false), "✓ interrupted");
   assert.equal(formatNotification("Error", "Failed", false), "✗ error: Failed");
+});
+
+test("notification channels follow Codex terminal detection", () => {
+  for (const env of [
+    { TERM_PROGRAM: "iTerm.app" },
+    { TERM_PROGRAM: "WezTerm" },
+    { TERM_PROGRAM: "WarpTerminal" },
+    { TERM_PROGRAM: "ghostty" },
+    { TERM: "xterm-kitty" },
+    { KITTY_WINDOW_ID: "1" },
+  ])
+    assert.equal(notificationChannel(env), "osc9", JSON.stringify(env));
+  for (const env of [
+    { TERM_PROGRAM: "zed" },
+    { TERM_PROGRAM: "Apple_Terminal" },
+    { TERM_PROGRAM: "vscode" },
+    { TERM: "xterm-256color" },
+    { TERM_PROGRAM: "iTerm.app", STY: "1234.pts-0.host" },
+  ])
+    assert.equal(notificationChannel(env), "bel", JSON.stringify(env));
+  assert.equal(
+    notificationChannel({ TERM_PROGRAM: "iTerm.app", TMUX: "/tmp/tmux-501/default,1,0" }),
+    "tmux",
+  );
+});
+
+test("turn completion uses OSC 9, tmux passthrough, or BEL notifications", () => {
+  assert.equal(turnNotification("osc9"), "\x1b]9;lazydsh: turn complete\x07");
+  assert.equal(turnNotification("bel"), "\x07");
+  assert.equal(turnNotification("tmux"), "\x1bPtmux;\x1b\x1b]9;lazydsh: turn complete\x07\x1b\\");
 });

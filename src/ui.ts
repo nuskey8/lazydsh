@@ -95,6 +95,41 @@ export function shouldQueueDuringTurn(text: string) {
   return Boolean(text.trim()) && !/^\s*\//.test(text) && !canRunDuringTurn(text);
 }
 
+export type NotificationChannel = "osc9" | "tmux" | "bel";
+
+/**
+ * Pick the notification channel the way Codex does: OSC 9 on terminals that
+ * support it, BEL everywhere else (including Zed). Inside tmux OSC 9 is
+ * wrapped in DCS passthrough; screen and unsupported terminals get BEL.
+ */
+export function notificationChannel(env: NodeJS.ProcessEnv = process.env): NotificationChannel {
+  const program = (env.TERM_PROGRAM ?? "").toLowerCase();
+  const term = (env.TERM ?? "").toLowerCase();
+  const osc9 =
+    program === "iterm.app" ||
+    program === "wezterm" ||
+    program === "warpterminal" ||
+    program === "ghostty" ||
+    program === "kitty" ||
+    term === "xterm-kitty" ||
+    term === "xterm-ghostty" ||
+    env.KITTY_WINDOW_ID !== undefined ||
+    env.WEZTERM_PANE !== undefined ||
+    env.GHOSTTY_RESOURCES_DIR !== undefined;
+  if (!osc9 || env.STY) return "bel";
+  return env.TMUX ? "tmux" : "osc9";
+}
+
+/** Sequence written when a turn completes while the terminal is unfocused. */
+export function turnNotification(channel: NotificationChannel) {
+  const body = "lazydsh: turn complete";
+  if (channel === "bel") return "\x07";
+  const osc9 = `\x1b]9;${body}\x07`;
+  // tmux only forwards OSC 9 through its DCS passthrough, and the inner ESC
+  // must be doubled so tmux does not treat it as the DCS terminator.
+  return channel === "tmux" ? `\x1bPtmux;${osc9.replaceAll("\x1b", "\x1b\x1b")}\x1b\\` : osc9;
+}
+
 export async function runUI(
   options: RuntimeOptions & { cwd: string },
   initial: {
@@ -111,6 +146,26 @@ export async function runUI(
     mouse: true,
     scrollToEndIndicator: () => dim("↓ latest"),
   });
+  const notification = turnNotification(notificationChannel());
+  const tmux = Boolean(process.env.TMUX);
+  // pi-tui consumes focus reports before input
+  // listeners see them, so observe the raw stdin stream. Focus is assumed on
+  // startup, matching Codex; the terminal reports changes after enabling 1004.
+  let terminalFocused = true;
+  let focusReportsSeen = false;
+  let focusTail = "";
+  const trackTerminalFocus = (chunk: string | Buffer) => {
+    const text = focusTail + (typeof chunk === "string" ? chunk : chunk.toString("utf8"));
+    focusTail = text.slice(-2);
+    for (let index = 0; index + 2 < text.length; index++) {
+      if (text[index] !== "\x1b" || text[index + 1] !== "[") continue;
+      if (text[index + 2] === "I") terminalFocused = true;
+      else if (text[index + 2] === "O") terminalFocused = false;
+      else continue;
+      focusReportsSeen = true;
+      index += 2;
+    }
+  };
   const header = new StartupBanner();
   const transcript = new Transcript();
   // Prompts typed during a running turn wait below the transcript; drainQueue sends
@@ -1203,6 +1258,7 @@ export async function runUI(
     void (async () => {
       let lastAssistant: string | undefined;
       let liveAnswer: StreamingMarkdown | undefined;
+      let aborted = false;
       const attemptUsage = new Map<string, { input: number; output: number }>();
       const startedAt = performance.now();
       let sawModelAttempt = false;
@@ -1292,6 +1348,7 @@ export async function runUI(
           },
           liveAttachments.flatMap(({ part }) => (part.type === "text" ? [] : [part])),
         );
+        aborted = result.finishReason === "aborted";
         if (result.finishReason === "completed") {
           if (/^\/effort\s+\S/.test(text.trim())) await persistSelection();
         }
@@ -1326,6 +1383,20 @@ export async function runUI(
         } else busy = false;
         tui.requestRender();
         if (ownsTurn && !closing) drainQueue();
+        // Codex-style notification: OSC 9 where supported (BEL elsewhere),
+        // only once the turn (and any queued continuation) has stopped and the
+        // terminal is unfocused, so the dot means "ready for you". tmux has
+        // focus-events off by default, so before the first focus report assume
+        // the terminal is unfocused instead of suppressing every notification.
+        if (
+          ownsTurn &&
+          !closing &&
+          !aborted &&
+          !stopping &&
+          !running &&
+          (!terminalFocused || (tmux && !focusReportsSeen))
+        )
+          tui.terminal.write(notification);
         if (!closing) await refreshStats();
       }
     })();
@@ -1385,6 +1456,7 @@ export async function runUI(
       dshCachePath({ dshHome: options.dshHome }, "lazydsh", "tui.log"),
     );
     tui.start();
+    process.stdin.on("data", trackTerminalFocus);
     update();
     if (hooks.afterFirstPaint) {
       // Paint the startup screen before optional plugins are imported, then
@@ -1413,6 +1485,7 @@ export async function runUI(
     }
     await done;
   } finally {
+    process.stdin.off("data", trackTerminalFocus);
     options.signal?.removeEventListener("abort", signalHandler);
     process.off("SIGINT", signalHandler);
     process.off("SIGTERM", signalHandler);
