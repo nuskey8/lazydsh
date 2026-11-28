@@ -187,7 +187,7 @@ export class ApprovalPanel implements Component {
     return details;
   }
   /** Tool headline plus a short preview of the command/file/patch being approved. */
-  private operationLines(width: number): string[] {
+  private operationLines(width: number): readonly string[] {
     const text = (value: string, indent: number) => new Text(value, indent, 0).render(width);
     if (!this.operation) return text(this.title, 2);
     let value = text(this.operation.value, 4);
