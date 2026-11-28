@@ -95,6 +95,33 @@ export function shouldQueueDuringTurn(text: string) {
   return Boolean(text.trim()) && !/^\s*\//.test(text) && !canRunDuringTurn(text);
 }
 
+export type NotificationChannel = "osc9" | "bel";
+
+export function notificationChannel(env: NodeJS.ProcessEnv = process.env): NotificationChannel {
+  if (env.TMUX || env.STY) return "bel";
+  const program = (env.TERM_PROGRAM ?? "").toLowerCase();
+  const term = (env.TERM ?? "").toLowerCase();
+  if (
+    program === "iterm.app" ||
+    program === "wezterm" ||
+    program === "warpterminal" ||
+    program === "ghostty" ||
+    program === "kitty" ||
+    term === "xterm-kitty" ||
+    term === "xterm-ghostty" ||
+    env.KITTY_WINDOW_ID !== undefined ||
+    env.WEZTERM_PANE !== undefined ||
+    env.GHOSTTY_RESOURCES_DIR !== undefined
+  )
+    return "osc9";
+  return "bel";
+}
+
+/** Sequence written when a turn completes while the terminal is unfocused. */
+export function turnNotification(channel: NotificationChannel) {
+  return channel === "osc9" ? "\x1b]9;lazydsh: turn complete\x07" : "\x07";
+}
+
 export async function runUI(
   options: RuntimeOptions & { cwd: string },
   initial: {
@@ -111,6 +138,22 @@ export async function runUI(
     mouse: true,
     scrollToEndIndicator: () => dim("↓ latest"),
   });
+  const notification = turnNotification(notificationChannel());
+  // pi-tui consumes focus reports before input
+  // listeners see them, so observe the raw stdin stream. Focus is assumed on
+  // startup, matching Codex; the terminal reports changes after enabling 1004.
+  let terminalFocused = true;
+  let focusTail = "";
+  const trackTerminalFocus = (chunk: string | Buffer) => {
+    const text = focusTail + (typeof chunk === "string" ? chunk : chunk.toString("utf8"));
+    focusTail = text.slice(-2);
+    for (let index = 0; index + 2 < text.length; index++) {
+      if (text[index] !== "\x1b" || text[index + 1] !== "[") continue;
+      if (text[index + 2] === "I") terminalFocused = true;
+      else if (text[index + 2] === "O") terminalFocused = false;
+      index += 2;
+    }
+  };
   const header = new StartupBanner();
   const transcript = new Transcript();
   // Prompts typed during a running turn wait below the transcript; drainQueue sends
@@ -1203,6 +1246,7 @@ export async function runUI(
     void (async () => {
       let lastAssistant: string | undefined;
       let liveAnswer: StreamingMarkdown | undefined;
+      let aborted = false;
       const attemptUsage = new Map<string, { input: number; output: number }>();
       const startedAt = performance.now();
       let sawModelAttempt = false;
@@ -1292,6 +1336,7 @@ export async function runUI(
           },
           liveAttachments.flatMap(({ part }) => (part.type === "text" ? [] : [part])),
         );
+        aborted = result.finishReason === "aborted";
         if (result.finishReason === "completed") {
           if (/^\/effort\s+\S/.test(text.trim())) await persistSelection();
         }
@@ -1326,6 +1371,11 @@ export async function runUI(
         } else busy = false;
         tui.requestRender();
         if (ownsTurn && !closing) drainQueue();
+        // Codex-style notification: OSC 9 where supported (BEL elsewhere),
+        // only once the turn (and any queued continuation) has stopped and the
+        // terminal is unfocused, so the dot means "ready for you".
+        if (ownsTurn && !closing && !aborted && !stopping && !running && !terminalFocused)
+          tui.terminal.write(notification);
         if (!closing) await refreshStats();
       }
     })();
@@ -1385,6 +1435,7 @@ export async function runUI(
       dshCachePath({ dshHome: options.dshHome }, "lazydsh", "tui.log"),
     );
     tui.start();
+    process.stdin.on("data", trackTerminalFocus);
     update();
     if (hooks.afterFirstPaint) {
       // Paint the startup screen before optional plugins are imported, then
@@ -1413,6 +1464,7 @@ export async function runUI(
     }
     await done;
   } finally {
+    process.stdin.off("data", trackTerminalFocus);
     options.signal?.removeEventListener("abort", signalHandler);
     process.off("SIGINT", signalHandler);
     process.off("SIGTERM", signalHandler);
