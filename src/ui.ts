@@ -1203,6 +1203,7 @@ export async function runUI(
     void (async () => {
       let lastAssistant: string | undefined;
       let liveAnswer: StreamingMarkdown | undefined;
+      let aborted = false;
       const attemptUsage = new Map<string, { input: number; output: number }>();
       const startedAt = performance.now();
       let sawModelAttempt = false;
@@ -1292,6 +1293,7 @@ export async function runUI(
           },
           liveAttachments.flatMap(({ part }) => (part.type === "text" ? [] : [part])),
         );
+        aborted = result.finishReason === "aborted";
         if (result.finishReason === "completed") {
           if (/^\/effort\s+\S/.test(text.trim())) await persistSelection();
         }
@@ -1326,6 +1328,8 @@ export async function runUI(
         } else busy = false;
         tui.requestRender();
         if (ownsTurn && !closing) drainQueue();
+        if (ownsTurn && !closing && !aborted && !stopping && !running)
+          tui.terminal.write("\x07");
         if (!closing) await refreshStats();
       }
     })();
