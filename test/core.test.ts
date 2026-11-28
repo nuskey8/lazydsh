@@ -107,12 +107,17 @@ test("notification channels follow Codex terminal detection", () => {
     { TERM_PROGRAM: "Apple_Terminal" },
     { TERM_PROGRAM: "vscode" },
     { TERM: "xterm-256color" },
-    { TERM_PROGRAM: "iTerm.app", TMUX: "/tmp/tmux-501/default,1,0" },
+    { TERM_PROGRAM: "iTerm.app", STY: "1234.pts-0.host" },
   ])
     assert.equal(notificationChannel(env), "bel", JSON.stringify(env));
+  assert.equal(
+    notificationChannel({ TERM_PROGRAM: "iTerm.app", TMUX: "/tmp/tmux-501/default,1,0" }),
+    "tmux",
+  );
 });
 
-test("turn completion uses OSC 9 or BEL notifications", () => {
+test("turn completion uses OSC 9, tmux passthrough, or BEL notifications", () => {
   assert.equal(turnNotification("osc9"), "\x1b]9;lazydsh: turn complete\x07");
   assert.equal(turnNotification("bel"), "\x07");
+  assert.equal(turnNotification("tmux"), "\x1bPtmux;\x1b\x1b]9;lazydsh: turn complete\x07\x1b\\");
 });
