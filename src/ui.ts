@@ -1328,8 +1328,7 @@ export async function runUI(
         } else busy = false;
         tui.requestRender();
         if (ownsTurn && !closing) drainQueue();
-        if (ownsTurn && !closing && !aborted && !stopping && !running)
-          tui.terminal.write("\x07");
+        if (ownsTurn && !closing && !aborted && !stopping && !running) tui.terminal.write("\x07");
         if (!closing) await refreshStats();
       }
     })();
