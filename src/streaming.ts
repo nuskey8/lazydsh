@@ -188,7 +188,7 @@ export class StreamingMarkdown implements Component {
     this.version++;
   }
 
-  render(width: number): string[] {
+  render(width: number): readonly string[] {
     if (this.final) return this.finalMarkdown!.render(width);
     if (!this.source.trim()) return [];
     if (this.cachedLines && this.cachedVersion === this.version && this.cachedWidth === width)

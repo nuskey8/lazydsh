@@ -40,7 +40,7 @@ const whale = [
 
 export class StartupBanner implements Component {
   invalidate() {}
-  render(width: number): string[] {
+  render(width: number): readonly string[] {
     const toolDescription = "A lazier terminal UI for DeepSeek Harness.";
 
     if (width < Math.max(64, visibleWidth(toolDescription) + 30))
@@ -339,7 +339,7 @@ export class ThinkingView implements Component {
   private revision = 0;
   private cachedWidth = -1;
   private cachedRevision = -1;
-  private cachedLines?: string[];
+  private cachedLines?: readonly string[];
 
   constructor(tui?: TUI, options: { text?: string; expanded?: boolean; duration?: number } = {}) {
     this.staticView = tui === undefined;
@@ -420,7 +420,7 @@ export class ThinkingView implements Component {
     this.cachedWidth = -1;
   }
 
-  render(width: number): string[] {
+  render(width: number): readonly string[] {
     if (
       !this.running &&
       this.cachedLines &&
@@ -429,7 +429,7 @@ export class ThinkingView implements Component {
     )
       return this.cachedLines;
     const header = this.headerText();
-    let lines: string[];
+    let lines: readonly string[];
     if (this.running && this.loader) {
       if (header !== this.message) {
         this.message = header;
